@@ -1,0 +1,82 @@
+@using AzureArchitectureStudio.Core.Common
+@using AzureArchitectureStudio.Models
+@using AzureArchitectureStudio.Services
+@using System.Reflection
+@inject AdsContext adsContext
+@inject ConfirmService confirmService
+
+<div>
+    <div class="ads-icon-panel-container">
+        <Tabs DefaultActiveKey="2" TabPosition="TabPosition.Left">
+            <TabBarExtraContent>
+		        <Button Shape="@ButtonShape.Circle" Icon="question" Size="@ButtonSize.Small" OnClick="OpenAbout"></Button>
+	        </TabBarExtraContent>
+            <ChildContent>
+                @foreach(var panel in _panels)
+                {
+                    <TabPane Key="@panel.Key">
+                        <TabTemplate>
+                            <IconComponent IconPath="@panel.IconPath" />
+                        </TabTemplate>
+                        <ChildContent>
+                            @foreach (var stencil in adsContext.AllStencils.Where(s => s.Category == panel.Category))
+                            {
+                                <Stencil Model=@stencil />
+                            }
+                        </ChildContent>
+                    </TabPane>
+                }
+            </ChildContent>
+        </Tabs>
+    </div>
+</div>
+
+@code {
+    private List<StencilPanelModel> _panels = new List<StencilPanelModel>()
+    {
+        new StencilPanelModel()
+        {
+            Key = "1",
+            IconPath = "assets/icons/gallery.svg",
+            Category = StencilCategory.Gallery,
+        },
+        new StencilPanelModel()
+        {
+            Key = "2",
+            IconPath = "assets/icons/networking.svg",
+            Category = StencilCategory.Networking,
+        },
+        new StencilPanelModel()
+        {
+            Key = "3",
+            IconPath = "assets/icons/compute.svg",
+            Category = StencilCategory.Compute,
+        },
+        new StencilPanelModel()
+        {
+            Key = "4",
+            IconPath = "assets/icons/database.svg",
+            Category = StencilCategory.Database,
+        }
+    };
+
+    private static string version = $"v{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion}";
+
+    async Task OpenAbout()
+    {
+        RenderFragment content =
+    @<div>
+        <p><b>Azure Design Studio</b> <small>@version</small></p>
+        <p><b>Created by: </b><a href="https://github.com/chunliu">Chun Liu</a></p>
+        <p>
+            <b>Disclaimer: </b>
+            <span>The app is a personal project without any warranty. It is neither an official product from Microsoft nor supported by Microsoft. Use it at your own risk.</span>
+        </p>
+        <p>Please feel free to share if you have any <a href="mailto:chunliu@microsoft.com">feedback</a>.</p>
+    </div>
+    ;
+        var title = "About";
+
+        await confirmService.Show(content, title, ConfirmButtons.OK);
+    }
+}

@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ads-main
+  namespace: ads
+  labels:
+    app: ads-main
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ads-main
+  template:
+    metadata:
+      labels:
+        app: ads-main
+    spec:
+      serviceAccountName: adssvcaccount
+      containers:
+      - name: ads-main
+        image: chunliu.azurecr.io/ads-server:0.4.3-7
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: 2Gi
+            cpu: 750m
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        env:
+          - name: ASPNETCORE_HTTPS_PORT
+            value: "443"

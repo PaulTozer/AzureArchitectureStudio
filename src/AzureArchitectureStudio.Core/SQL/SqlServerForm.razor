@@ -1,0 +1,16 @@
+@using AzureArchitectureStudio.Core.Components
+@using Blazor.Diagrams.Core
+@using Blazor.Diagrams.Core.Models
+
+<Form Model="@sqlServer" LabelColSpan="6" WrapperColSpan="18" Size="@FormSize.Small">
+    <NameAndLocation Node="@context" />
+</Form>
+
+@code {
+    [CascadingParameter]
+    public NodeModel Node { get; set; } = null!;
+    [CascadingParameter]
+    public Diagram Diagram { get; set; } = null!;
+
+    private SqlServerModel sqlServer => (Node as SqlServerModel)!;
+}

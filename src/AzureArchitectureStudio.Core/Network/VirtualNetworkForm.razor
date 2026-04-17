@@ -1,0 +1,73 @@
+@using AzureArchitectureStudio.Core.Components
+@using AzureArchitectureStudio.Core.Models
+@using Blazor.Diagrams.Core
+@using Blazor.Diagrams.Core.Models
+
+<Form Model="@vnet" LabelColSpan="6" WrapperColSpan="18" Size="@FormSize.Small">
+    <NameAndLocation Node="@context" />
+    <FormItem Label="@("IPv4 address space")" LabelColSpan="11" WrapperColSpan="13">
+        <Tooltip Title="@("Add an address space")">
+            <Button Shape="@ButtonShape.Circle" Icon="plus" Size="@ButtonSize.Small" OnClick="() => { context.IpSpace.Add(new AddressSpace()); }" />
+        </Tooltip>
+    </FormItem>
+    <AntList DataSource="@context.IpSpace" Size="@ListSize.Small" Split=false>
+        <ChildContent Context="item">
+            <ListItem style="padding: 5px 0px;">
+                <FormItem WrapperColSpan="24" Style="flex:auto;">
+                    <InputGroup Compact>
+                        <Input @bind-Value="@(item.AddressPrefix)" Size="@InputSize.Small" />
+                        <Tooltip Title=@("Remove the address space") Style="display:inline-flex;">
+                            <Button Icon="delete" Size="@ButtonSize.Small" Disabled="@(context.IpSpace.Count <= 1)"
+                                    OnClick="() => {context.IpSpace.Remove(item);}" />
+                        </Tooltip>
+                    </InputGroup>
+                </FormItem>
+            </ListItem>
+        </ChildContent>
+    </AntList>
+    <FormItem Label="@("Subnets")" LabelColSpan="6" WrapperColSpan="18">
+        <Tooltip Title="@("Add an subnet")">
+            <Button Shape="@ButtonShape.Circle" Icon="plus" Size="@ButtonSize.Small" OnClick="HandleAddSubnet" />
+        </Tooltip>
+    </FormItem>
+    <AntList DataSource="@context.Subnets" Size="@ListSize.Small" Split=false>
+        <ChildContent Context="item">
+            <ListItem style="padding: 5px 0px;">
+                <FormItem WrapperColSpan="24" Style="flex:auto;">
+                    <InputGroup Compact>
+                        <Input @bind-Value="@(item.Name)" Size="@InputSize.Small" />
+                        <Input @bind-Value="@(item.AddressPrefix)" Size="@InputSize.Small" />
+                        <Tooltip Title=@("Remove the subnet") Style="display:inline-flex;">
+                            <Button Icon="delete" Size="@ButtonSize.Small" Disabled="@(context.Subnets.Count <= 1)"
+                                    OnClick="() => {HandleRemoveSubnet(item);}" />
+                        </Tooltip>
+                    </InputGroup>
+                </FormItem>
+            </ListItem>
+        </ChildContent>
+    </AntList>
+</Form>
+@code {
+    [CascadingParameter]
+    public NodeModel Node { get; set; } = null!;
+    [CascadingParameter]
+    public Diagram Diagram { get; set; } = null!;
+
+    private VirtualNetworkModel vnet => (VirtualNetworkModel)Node;
+
+    private void HandleAddSubnet()
+    {
+        var subnet = vnet.AddSubnet(new SubnetModel()
+            {
+                Name = "Subnet1"
+            });
+
+        Diagram.AddGroup(subnet);
+    }
+
+    private void HandleRemoveSubnet(SubnetModel subnet)
+    {
+        vnet.RemoveChild(subnet);
+        Diagram.RemoveGroup(subnet);
+    }
+}

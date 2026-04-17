@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+option csharp_namespace = "AzureArchitectureStudio.SharedModels.Protos";
+
+import "google/protobuf/empty.proto";
+
+service Design {
+	rpc Save(SaveDesignRequest) returns(SaveDesignResponse);
+	rpc GetSaved(google.protobuf.Empty) returns(GetSavedDesignResponse);
+	rpc Load(LoadDesignRequest) returns(LoadDesignResponse);
+	rpc Delete(DeleteDesignRequest) returns(DeleteDesignResponse);
+}
+
+message SaveDesignRequest {
+	string name = 1;
+	string data = 2;
+}
+
+message SaveDesignResponse {
+	int32 status_code = 1;
+}
+
+message GetSavedDesignResponse {
+	int32 status_code = 1;
+	repeated string names = 2;
+}
+
+message LoadDesignRequest {
+	string name = 1;
+}
+
+message LoadDesignResponse {
+	int32 status_code = 1;
+	string data = 2;
+}
+
+message DeleteDesignRequest {
+	string name = 1;
+}
+
+message DeleteDesignResponse {
+	int32 status_code = 1;
+}

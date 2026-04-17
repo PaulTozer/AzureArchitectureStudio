@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Azure Architecture Studio</title>
+    <base href="/" />
+    <link href="_content/AntDesign/css/ant-design-blazor.css" rel="stylesheet" />
+    <link href="_content/Z.Blazor.Diagrams/style.css" rel="stylesheet" />
+    <link href="css/prism.css?v=1.28.0" rel="stylesheet" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="AzureArchitectureStudio.styles.css" rel="stylesheet" />
+    <link href="manifest.json" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+</head>
+
+<body style="background-image:linear-gradient(to top left, #36A4FF, #FFFFFF);">
+    <div id="app">
+        <div style="display: flex; justify-content: center; align-items: center; flex-direction: column; min-height: 420px; height: 100%;">
+            <div style="padding:100px 0;height:128px;"></div>
+            <div style="padding:90px 0;">
+                <img src="./icon-192.png" style="width:128px;height:128px;" />
+                <div style="font-size:14px;font-weight:bold">Azure Architecture Studio</div>
+            </div>
+            <div class="page-loading-wrap">
+                <div class="loading-spin loading-spin-lg loading-spin-spinning">
+                    <span class="loading-spin-dot loading-spin-dot-spin">
+                        <i class="loading-spin-dot-item"></i>
+                        <i class="loading-spin-dot-item"></i>
+                        <i class="loading-spin-dot-item"></i>
+                        <i class="loading-spin-dot-item"></i>
+                    </span>
+                </div>
+            </div>
+            <div>Loading. It may take a minute or two.</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="js/prism.js?v=1.28.0"></script>
+    <script src="_content/Microsoft.Authentication.WebAssembly.Msal/AuthenticationService.js"></script>
+    <script src="js/dom-to-image-more.min.js"></script>
+    <script src="js/ads.js"></script>
+    <script src="_content/AntDesign/js/ant-design-blazor.js"></script>
+    <script src="_content/Z.Blazor.Diagrams/script.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="sw-registrator.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+	<Nullable>enable</Nullable>
+	<LangVersion>latest</LangVersion>
+	<PackageScribanIncludeSource>true</PackageScribanIncludeSource>
+	<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Templates\AzureNodeDto.scriban" />
+    <None Remove="Templates\AzureNodeProfile.scriban" />
+    <None Remove="Templates\DataModelFactory.scriban" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\AzureNodeDto.scriban" />
+    <EmbeddedResource Include="Templates\AzureNodeProfile.scriban" />
+    <EmbeddedResource Include="Templates\DataModelFactory.scriban" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" />
+    <PackageReference Include="Scriban" Version="7.0.0" IncludeAssets="Build" />
+	<PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+  </ItemGroup>
+	
+</Project>

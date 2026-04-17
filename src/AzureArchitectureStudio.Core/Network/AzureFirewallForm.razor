@@ -1,0 +1,33 @@
+@using AzureArchitectureStudio.Core.Components
+@using AzureArchitectureStudio.Core.Models
+@using Blazor.Diagrams.Core
+@using Blazor.Diagrams.Core.Models
+
+<Form Model="@firewall" LabelColSpan="6" WrapperColSpan="18" Size="@FormSize.Small">
+    <NameAndLocation Node="@context" />
+    <FormItem>
+        <RadioGroup @bind-Value="@context.Sku" ButtonStyle="@RadioButtonStyle.Solid" Size="@InputSize.Small">
+            <Radio RadioButton Value="@("Premium")">Premium</Radio>
+            <Radio RadioButton Value="@("Standard")">Standard</Radio>
+        </RadioGroup>   
+    </FormItem>
+    <Divider Orientation="@DividerOrientation.Left" Plain>Firewall policy</Divider>
+    <FormItem>
+        <Input @bind-Value="@context.FirewallPolicy.Name" Size="@InputSize.Small" />
+    </FormItem>
+    <FormItem>
+        <RadioGroup @bind-Value="@context.FirewallPolicy.Sku" ButtonStyle="@RadioButtonStyle.Solid" Size="@InputSize.Small">
+            <Radio RadioButton Value="@("Premium")" Disabled="@(context.Sku.Equals("Standard"))">Premium</Radio>
+            <Radio RadioButton Value="@("Standard")">Standard</Radio>
+        </RadioGroup>    
+    </FormItem>
+</Form>
+
+@code {
+    [CascadingParameter]
+    public NodeModel Node { get; set; } = null!;
+    [CascadingParameter]
+    public Diagram Diagram { get; set; } = null!;
+
+    private AzureFirewallModel firewall => (AzureFirewallModel)Node;
+}
