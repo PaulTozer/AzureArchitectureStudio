@@ -1,6 +1,12 @@
 // Data-driven resource type registry.
-// Instead of hardcoding every resource type in switch statements,
-// definitions are loaded from /resource-types.json at startup.
+// Curated definitions from /resource-types.json are loaded at startup.
+// For types without curated schemas, ARM schemas are fetched on demand
+// from the public GitHub repository and converted automatically.
+
+import {
+  fetchArmPropertySchema,
+  getConfiguredApiVersion,
+} from './arm-schema-service';
 
 export interface PropertyField {
   key: string;
@@ -32,17 +38,43 @@ export interface ResourceTypeDefinition {
   armMapping?: ArmMappingDef;
 }
 
-// In-memory registry populated at startup
+// ---------------------------------------------------------------------------
+// In-memory stores
+// ---------------------------------------------------------------------------
+/** Curated definitions from resource-types.json */
 let registry: Map<string, ResourceTypeDefinition> = new Map();
 
+/** Maps service-key → ARM resource type (e.g. "network-interfaces" → "Microsoft.Network/networkInterfaces") */
+let armTypeMap: Record<string, string> = {};
+
+/** Dynamically-resolved definitions (fetched from ARM schemas at runtime) */
+const dynamicRegistry: Map<string, ResourceTypeDefinition> = new Map();
+
+// ---------------------------------------------------------------------------
+// Startup loading
+// ---------------------------------------------------------------------------
+
 export async function loadResourceTypeRegistry(): Promise<void> {
-  const res = await fetch('/resource-types.json');
-  const defs: ResourceTypeDefinition[] = await res.json();
+  const [defsRes, mapRes] = await Promise.all([
+    fetch('/resource-types.json'),
+    fetch('/arm-type-map.json'),
+  ]);
+  const defs: ResourceTypeDefinition[] = await defsRes.json();
   registry = new Map(defs.map((d) => [d.key, d]));
+
+  try {
+    armTypeMap = await mapRes.json();
+  } catch {
+    armTypeMap = {};
+  }
 }
 
+// ---------------------------------------------------------------------------
+// Synchronous lookups (used for non-property concerns)
+// ---------------------------------------------------------------------------
+
 export function getResourceType(key: string): ResourceTypeDefinition | undefined {
-  return registry.get(key);
+  return registry.get(key) ?? dynamicRegistry.get(key);
 }
 
 export function getAllResourceTypes(): ResourceTypeDefinition[] {
@@ -58,11 +90,11 @@ export function getGroupStyle(key: string): { width: number; height: number } | 
 }
 
 export function getDisplayName(key: string): string {
-  return registry.get(key)?.displayName ?? key;
+  return registry.get(key)?.displayName ?? dynamicRegistry.get(key)?.displayName ?? key;
 }
 
 export function getDefaultProperties(key: string): Record<string, unknown> {
-  const def = registry.get(key);
+  const def = registry.get(key) ?? dynamicRegistry.get(key);
   if (!def) return {};
   const defaults: Record<string, unknown> = {};
   for (const field of def.propertySchema) {
@@ -71,4 +103,61 @@ export function getDefaultProperties(key: string): Record<string, unknown> {
     }
   }
   return defaults;
+}
+
+// ---------------------------------------------------------------------------
+// Async lookup — resolves ARM schema dynamically when no curated def exists
+// ---------------------------------------------------------------------------
+
+/**
+ * Look up a resource type definition, falling back to dynamic ARM schema
+ * resolution when no curated definition exists.
+ */
+export async function getResourceTypeAsync(
+  key: string,
+  displayName?: string,
+): Promise<ResourceTypeDefinition | undefined> {
+  // 1. Curated definition wins
+  const curated = registry.get(key);
+  if (curated) return curated;
+
+  // 2. Previously resolved dynamic definition
+  const cached = dynamicRegistry.get(key);
+  if (cached) return cached;
+
+  // 3. Try to resolve from ARM schema
+  const armType = armTypeMap[key];
+  if (!armType) return undefined;
+
+  const propertySchema = await fetchArmPropertySchema(armType);
+  const apiVersion = getConfiguredApiVersion(armType) ?? 'unknown';
+
+  const def: ResourceTypeDefinition = {
+    key,
+    displayName: displayName ?? humanizeKey(key),
+    armType,
+    apiVersion,
+    propertySchema,
+  };
+
+  dynamicRegistry.set(key, def);
+  return def;
+}
+
+/**
+ * Returns the ARM resource type string for a service key, if known.
+ */
+export function getArmType(key: string): string | undefined {
+  return registry.get(key)?.armType ?? armTypeMap[key];
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function humanizeKey(key: string): string {
+  return key
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }

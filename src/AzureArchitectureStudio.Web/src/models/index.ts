@@ -6,10 +6,12 @@ export type { ArmResource, Parameter, DeploymentTemplate } from './arm-template'
 export {
   loadResourceTypeRegistry,
   getResourceType,
+  getResourceTypeAsync,
   getAllResourceTypes,
   isGroupType,
   getGroupStyle,
   getDisplayName,
   getDefaultProperties,
+  getArmType,
 } from './resource-registry';
 export type { ResourceTypeDefinition, PropertyField } from './resource-registry';

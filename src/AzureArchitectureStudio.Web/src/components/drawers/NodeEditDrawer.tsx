@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   DrawerBody,
   DrawerHeader,
@@ -7,11 +8,13 @@ import {
   Field,
   Switch,
   Button,
+  Spinner,
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
 import type { AzureNode, AzureNodeData } from '../../models';
-import { getResourceType, getDisplayName } from '../../models';
+import { getResourceType, getResourceTypeAsync, getDisplayName } from '../../models';
+import type { ResourceTypeDefinition } from '../../models';
 import SchemaForm from '../forms/SchemaForm';
 
 interface NodeEditDrawerProps {
@@ -27,7 +30,32 @@ export default function NodeEditDrawer({
 }: NodeEditDrawerProps) {
   const { updateNodeData } = useAppContext();
   const data = node.data as AzureNodeData;
-  const resourceDef = getResourceType(data.typeKey);
+
+  // Try sync first; if missing, resolve async
+  const [resourceDef, setResourceDef] = useState<ResourceTypeDefinition | undefined>(
+    () => getResourceType(data.typeKey),
+  );
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const syncDef = getResourceType(data.typeKey);
+    if (syncDef) {
+      setResourceDef(syncDef);
+      setLoading(false);
+      return;
+    }
+
+    // Attempt dynamic ARM schema resolution
+    let cancelled = false;
+    setLoading(true);
+    getResourceTypeAsync(data.typeKey, data.label).then((def) => {
+      if (!cancelled) {
+        setResourceDef(def);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [data.typeKey, data.label]);
 
   const handleChange = (field: keyof AzureNodeData, value: unknown) => {
     updateNodeData(node.id, { [field]: value } as Partial<AzureNodeData>);
@@ -85,7 +113,14 @@ export default function NodeEditDrawer({
         </Field>
 
         {/* Resource-specific properties — driven by registry schema */}
-        {resourceDef && resourceDef.propertySchema.length > 0 ? (
+        {loading ? (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Spinner size="tiny" />
+            <span style={{ fontSize: 12, color: 'var(--colorNeutralForeground3)' }}>
+              Loading resource properties…
+            </span>
+          </div>
+        ) : resourceDef && resourceDef.propertySchema.length > 0 ? (
           <SchemaForm
             schema={resourceDef.propertySchema}
             properties={data.properties}
@@ -93,9 +128,7 @@ export default function NodeEditDrawer({
           />
         ) : (
           <p style={{ marginTop: 12, color: 'var(--colorNeutralForeground3)', fontSize: 12 }}>
-            {resourceDef
-              ? 'No configurable properties for this resource type.'
-              : `Resource type "${data.typeKey}" — properties will be available when a definition is added to resource-types.json.`}
+            No configurable properties available for this resource type.
           </p>
         )}
 
