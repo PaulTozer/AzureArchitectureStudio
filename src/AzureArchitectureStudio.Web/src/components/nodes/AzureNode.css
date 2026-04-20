@@ -1,0 +1,50 @@
+.azure-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+  min-width: 80px;
+  cursor: grab;
+  position: relative;
+}
+
+.azure-node.selected {
+  border-color: #0078d4;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.3);
+}
+
+.azure-node-icon {
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.azure-node-label {
+  margin-top: 4px;
+  font-size: 11px;
+  text-align: center;
+  color: #323130;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.azure-node-warning {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: #d83b01;
+  font-size: 14px;
+}
+
+/* React Flow handle styling */
+.azure-node .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: #0078d4;
+  border: 2px solid #fff;
+}

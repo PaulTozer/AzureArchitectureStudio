@@ -1,0 +1,13 @@
+.top-menu {
+  display: flex;
+  align-items: center;
+  background: var(--colorNeutralBackground1);
+  border-bottom: 1px solid var(--colorNeutralStroke2);
+  padding: 0 8px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.top-menu-loading {
+  margin-left: 12px;
+}

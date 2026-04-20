@@ -1,0 +1,933 @@
+[
+  {
+    "key": "resource-group",
+    "displayName": "Resource Group",
+    "armType": "Microsoft.Resources/resourceGroups",
+    "apiVersion": "2023-07-01",
+    "isGroup": true,
+    "groupStyle": { "width": 300, "height": 250 },
+    "propertySchema": [],
+    "armMapping": {}
+  },
+  {
+    "key": "virtual-network",
+    "displayName": "Virtual Network",
+    "armType": "Microsoft.Network/virtualNetworks",
+    "apiVersion": "2023-04-01",
+    "isGroup": true,
+    "groupStyle": { "width": 250, "height": 200 },
+    "propertySchema": [
+      {
+        "key": "ipSpace",
+        "label": "IPv4 Address Spaces",
+        "type": "array",
+        "defaultValue": [{ "addressPrefix": "10.0.0.0/16" }],
+        "itemSchema": {
+          "key": "addressPrefix",
+          "label": "Address Prefix",
+          "type": "string",
+          "placeholder": "e.g. 10.0.0.0/16"
+        }
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "ipSpace": "properties.addressSpace.addressPrefixes"
+      }
+    }
+  },
+  {
+    "key": "subnet",
+    "displayName": "Subnet",
+    "armType": "Microsoft.Network/virtualNetworks/subnets",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "addressPrefix",
+        "label": "Address Prefix",
+        "type": "string",
+        "defaultValue": "10.0.0.0/24",
+        "placeholder": "e.g. 10.0.0.0/24"
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "addressPrefix": "properties.addressPrefix"
+      }
+    }
+  },
+  {
+    "key": "virtual-machine",
+    "displayName": "Virtual Machine",
+    "armType": "Microsoft.Compute/virtualMachines",
+    "apiVersion": "2023-07-01",
+    "propertySchema": [
+      {
+        "key": "vmSize",
+        "label": "VM Size",
+        "type": "select",
+        "defaultValue": "Standard_B2s",
+        "options": [
+          { "label": "Standard B1s", "value": "Standard_B1s" },
+          { "label": "Standard B2s", "value": "Standard_B2s" },
+          { "label": "Standard D2s v5", "value": "Standard_D2s_v5" },
+          { "label": "Standard D4s v5", "value": "Standard_D4s_v5" },
+          { "label": "Standard E2s v5", "value": "Standard_E2s_v5" }
+        ]
+      },
+      {
+        "key": "osType",
+        "label": "OS Type",
+        "type": "radio",
+        "defaultValue": "linux",
+        "options": [
+          { "label": "Linux", "value": "linux" },
+          { "label": "Windows", "value": "windows" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "vmSize": "properties.hardwareProfile.vmSize"
+      }
+    }
+  },
+  {
+    "key": "storage-account",
+    "displayName": "Storage Account",
+    "armType": "Microsoft.Storage/storageAccounts",
+    "apiVersion": "2023-01-01",
+    "armDefaults": {
+      "kind": "StorageV2"
+    },
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "Standard_LRS",
+        "options": [
+          { "label": "Standard LRS", "value": "Standard_LRS" },
+          { "label": "Standard GRS", "value": "Standard_GRS" },
+          { "label": "Standard RAGRS", "value": "Standard_RAGRS" },
+          { "label": "Standard ZRS", "value": "Standard_ZRS" },
+          { "label": "Premium LRS", "value": "Premium_LRS" }
+        ]
+      },
+      {
+        "key": "accessTier",
+        "label": "Access Tier",
+        "type": "radio",
+        "defaultValue": "Hot",
+        "options": [
+          { "label": "Hot", "value": "Hot" },
+          { "label": "Cool", "value": "Cool" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "skuProperty": "sku",
+      "propertyMappings": {
+        "accessTier": "properties.accessTier"
+      },
+      "parameters": [
+        { "name": "Name", "type": "string", "description": "Name of the storage account." }
+      ]
+    }
+  },
+  {
+    "key": "azure-firewall",
+    "displayName": "Azure Firewall",
+    "armType": "Microsoft.Network/azureFirewalls",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "skuTier",
+        "label": "SKU Tier",
+        "type": "select",
+        "defaultValue": "Standard",
+        "options": [
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" },
+          { "label": "Basic", "value": "Basic" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "skuTier": "properties.sku.tier"
+      }
+    }
+  },
+  {
+    "key": "azure-bastions",
+    "displayName": "Azure Bastion",
+    "armType": "Microsoft.Network/bastionHosts",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "Basic",
+        "options": [
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "skuProperty": "sku"
+    }
+  },
+  {
+    "key": "public-ip",
+    "displayName": "Public IP Address",
+    "armType": "Microsoft.Network/publicIPAddresses",
+    "apiVersion": "2023-04-01",
+    "armDefaults": {
+      "sku": { "name": "Standard" }
+    },
+    "propertySchema": [
+      {
+        "key": "allocationMethod",
+        "label": "Allocation Method",
+        "type": "radio",
+        "defaultValue": "Static",
+        "options": [
+          { "label": "Static", "value": "Static" },
+          { "label": "Dynamic", "value": "Dynamic" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "allocationMethod": "properties.publicIPAllocationMethod"
+      }
+    }
+  },
+  {
+    "key": "sql-server",
+    "displayName": "SQL Server",
+    "armType": "Microsoft.Sql/servers",
+    "apiVersion": "2023-05-01-preview",
+    "isGroup": true,
+    "groupStyle": { "width": 250, "height": 200 },
+    "propertySchema": [
+      {
+        "key": "adminLogin",
+        "label": "Administrator Login",
+        "type": "string",
+        "placeholder": "sqladmin",
+        "required": true
+      },
+      {
+        "key": "adminPassword",
+        "label": "Administrator Password",
+        "type": "password",
+        "required": true
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "adminLogin": "properties.administratorLogin",
+        "adminPassword": "properties.administratorLoginPassword"
+      },
+      "parameters": [
+        { "name": "sqlAdmin", "type": "string", "description": "User name of the administrator of the SQL server." },
+        { "name": "sqlAdminPassword", "type": "secureString", "description": "Password of the administrator of the SQL server." }
+      ]
+    }
+  },
+  {
+    "key": "sql-database",
+    "displayName": "SQL Database",
+    "armType": "Microsoft.Sql/servers/databases",
+    "apiVersion": "2023-05-01-preview",
+    "propertySchema": [
+      {
+        "key": "tier",
+        "label": "Service Tier",
+        "type": "select",
+        "defaultValue": "Basic",
+        "options": [
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" },
+          { "label": "GeneralPurpose", "value": "GeneralPurpose" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "skuProperty": "tier"
+    }
+  },
+  {
+    "key": "appservice-plan",
+    "displayName": "App Service Plan",
+    "armType": "Microsoft.Web/serverfarms",
+    "apiVersion": "2023-01-01",
+    "isGroup": true,
+    "groupStyle": { "width": 250, "height": 200 },
+    "armDefaults": {
+      "sku": { "name": "B1", "tier": "Basic" }
+    },
+    "propertySchema": [
+      {
+        "key": "skuName",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "B1",
+        "options": [
+          { "label": "Free F1", "value": "F1" },
+          { "label": "Basic B1", "value": "B1" },
+          { "label": "Standard S1", "value": "S1" },
+          { "label": "Premium P1v3", "value": "P1v3" }
+        ]
+      },
+      {
+        "key": "os",
+        "label": "Operating System",
+        "type": "radio",
+        "defaultValue": "linux",
+        "options": [
+          { "label": "Linux", "value": "linux" },
+          { "label": "Windows", "value": "windows" }
+        ]
+      }
+    ],
+    "armMapping": {}
+  },
+  {
+    "key": "web-app",
+    "displayName": "Web App",
+    "armType": "Microsoft.Web/sites",
+    "apiVersion": "2023-01-01",
+    "armDefaults": {
+      "kind": "app"
+    },
+    "propertySchema": [
+      {
+        "key": "publish",
+        "label": "Publish",
+        "type": "radio",
+        "defaultValue": "code",
+        "options": [
+          { "label": "Code", "value": "code" },
+          { "label": "Docker container", "value": "docker" }
+        ]
+      },
+      {
+        "key": "runtimeStack",
+        "label": "Runtime Stack",
+        "type": "select",
+        "defaultValue": "",
+        "options": [
+          { "label": ".NET 8", "value": "dotnet|v8.0" },
+          { "label": ".NET 6", "value": "dotnet|v6.0" },
+          { "label": "Node 20 LTS", "value": "node|~20" },
+          { "label": "Node 18 LTS", "value": "node|~18" },
+          { "label": "Java 21", "value": "java|21" },
+          { "label": "Java 17", "value": "java|17" },
+          { "label": "Python 3.12", "value": "python|3.12" },
+          { "label": "Python 3.11", "value": "python|3.11" },
+          { "label": "PHP 8.3", "value": "php|8.3" }
+        ],
+        "visibleWhen": { "field": "publish", "value": "code" }
+      },
+      {
+        "key": "os",
+        "label": "Operating System",
+        "type": "radio",
+        "defaultValue": "linux",
+        "options": [
+          { "label": "Linux", "value": "linux" },
+          { "label": "Windows", "value": "windows" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "os": "properties.siteConfig.linuxFxVersion"
+      }
+    }
+  },
+  {
+    "key": "function-app",
+    "displayName": "Function App",
+    "armType": "Microsoft.Web/sites",
+    "apiVersion": "2023-01-01",
+    "armDefaults": {
+      "kind": "functionapp"
+    },
+    "propertySchema": [
+      {
+        "key": "runtimeStack",
+        "label": "Runtime Stack",
+        "type": "select",
+        "defaultValue": "",
+        "options": [
+          { "label": ".NET 8 (Isolated)", "value": "dotnet-isolated|v8.0" },
+          { "label": "Node 20", "value": "node|~20" },
+          { "label": "Python 3.11", "value": "python|3.11" },
+          { "label": "Java 17", "value": "java|17" }
+        ]
+      },
+      {
+        "key": "os",
+        "label": "Operating System",
+        "type": "radio",
+        "defaultValue": "linux",
+        "options": [
+          { "label": "Linux", "value": "linux" },
+          { "label": "Windows", "value": "windows" }
+        ]
+      }
+    ],
+    "armMapping": {}
+  },
+  {
+    "key": "aks-cluster",
+    "displayName": "Azure Kubernetes Service",
+    "armType": "Microsoft.ContainerService/managedClusters",
+    "apiVersion": "2023-08-01",
+    "propertySchema": [
+      {
+        "key": "kubernetesVersion",
+        "label": "Kubernetes Version",
+        "type": "select",
+        "defaultValue": "1.28",
+        "options": [
+          { "label": "1.30", "value": "1.30" },
+          { "label": "1.29", "value": "1.29" },
+          { "label": "1.28", "value": "1.28" },
+          { "label": "1.27", "value": "1.27" }
+        ]
+      },
+      {
+        "key": "nodeCount",
+        "label": "Node Count",
+        "type": "number",
+        "defaultValue": 3
+      },
+      {
+        "key": "nodeSize",
+        "label": "Node VM Size",
+        "type": "select",
+        "defaultValue": "Standard_D2s_v5",
+        "options": [
+          { "label": "Standard B2s", "value": "Standard_B2s" },
+          { "label": "Standard D2s v5", "value": "Standard_D2s_v5" },
+          { "label": "Standard D4s v5", "value": "Standard_D4s_v5" },
+          { "label": "Standard D8s v5", "value": "Standard_D8s_v5" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "kubernetesVersion": "properties.kubernetesVersion"
+      }
+    }
+  },
+  {
+    "key": "apim",
+    "displayName": "API Management",
+    "armType": "Microsoft.ApiManagement/service",
+    "apiVersion": "2023-03-01-preview",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "select",
+        "defaultValue": "Developer",
+        "options": [
+          { "label": "Developer", "value": "Developer" },
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" },
+          { "label": "Consumption", "value": "Consumption" }
+        ]
+      },
+      {
+        "key": "capacity",
+        "label": "Capacity",
+        "type": "number",
+        "defaultValue": 1
+      },
+      {
+        "key": "publisherEmail",
+        "label": "Publisher Email",
+        "type": "string",
+        "placeholder": "admin@contoso.com",
+        "required": true
+      },
+      {
+        "key": "publisherName",
+        "label": "Publisher Name",
+        "type": "string",
+        "placeholder": "Contoso",
+        "required": true
+      }
+    ],
+    "armMapping": {
+      "skuProperty": "sku",
+      "propertyMappings": {
+        "publisherEmail": "properties.publisherEmail",
+        "publisherName": "properties.publisherName"
+      }
+    }
+  },
+  {
+    "key": "app-gateway",
+    "displayName": "Application Gateway",
+    "armType": "Microsoft.Network/applicationGateways",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "tier",
+        "label": "Tier",
+        "type": "select",
+        "defaultValue": "Standard_v2",
+        "options": [
+          { "label": "Standard v2", "value": "Standard_v2" },
+          { "label": "WAF v2", "value": "WAF_v2" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "tier": "properties.sku.tier"
+      }
+    }
+  },
+  {
+    "key": "nsg",
+    "displayName": "Network Security Group",
+    "armType": "Microsoft.Network/networkSecurityGroups",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [],
+    "armMapping": {}
+  },
+  {
+    "key": "load-balancer",
+    "displayName": "Load Balancer",
+    "armType": "Microsoft.Network/loadBalancers",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "radio",
+        "defaultValue": "Standard",
+        "options": [
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Basic", "value": "Basic" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "cosmos-db",
+    "displayName": "Azure Cosmos DB",
+    "armType": "Microsoft.DocumentDB/databaseAccounts",
+    "apiVersion": "2023-04-15",
+    "propertySchema": [
+      {
+        "key": "apiKind",
+        "label": "API",
+        "type": "select",
+        "defaultValue": "Sql",
+        "options": [
+          { "label": "NoSQL", "value": "Sql" },
+          { "label": "MongoDB", "value": "MongoDB" },
+          { "label": "Cassandra", "value": "Cassandra" },
+          { "label": "Gremlin", "value": "Gremlin" },
+          { "label": "Table", "value": "Table" }
+        ]
+      },
+      {
+        "key": "consistencyLevel",
+        "label": "Default Consistency",
+        "type": "select",
+        "defaultValue": "Session",
+        "options": [
+          { "label": "Strong", "value": "Strong" },
+          { "label": "Bounded Staleness", "value": "BoundedStaleness" },
+          { "label": "Session", "value": "Session" },
+          { "label": "Consistent Prefix", "value": "ConsistentPrefix" },
+          { "label": "Eventual", "value": "Eventual" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "consistencyLevel": "properties.consistencyPolicy.defaultConsistencyLevel"
+      }
+    }
+  },
+  {
+    "key": "key-vault",
+    "displayName": "Key Vault",
+    "armType": "Microsoft.KeyVault/vaults",
+    "apiVersion": "2023-07-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "radio",
+        "defaultValue": "standard",
+        "options": [
+          { "label": "Standard", "value": "standard" },
+          { "label": "Premium", "value": "premium" }
+        ]
+      },
+      {
+        "key": "enableSoftDelete",
+        "label": "Soft Delete",
+        "type": "boolean",
+        "defaultValue": true
+      },
+      {
+        "key": "enablePurgeProtection",
+        "label": "Purge Protection",
+        "type": "boolean",
+        "defaultValue": false
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "enableSoftDelete": "properties.enableSoftDelete",
+        "enablePurgeProtection": "properties.enablePurgeProtection"
+      }
+    }
+  },
+  {
+    "key": "container-registry",
+    "displayName": "Container Registry",
+    "armType": "Microsoft.ContainerRegistry/registries",
+    "apiVersion": "2023-07-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "Basic",
+        "options": [
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "redis-cache",
+    "displayName": "Azure Cache for Redis",
+    "armType": "Microsoft.Cache/redis",
+    "apiVersion": "2023-08-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "select",
+        "defaultValue": "Basic_C0",
+        "options": [
+          { "label": "Basic C0", "value": "Basic_C0" },
+          { "label": "Standard C1", "value": "Standard_C1" },
+          { "label": "Premium P1", "value": "Premium_P1" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "service-bus",
+    "displayName": "Service Bus",
+    "armType": "Microsoft.ServiceBus/namespaces",
+    "apiVersion": "2022-10-01-preview",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "select",
+        "defaultValue": "Standard",
+        "options": [
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "event-hub",
+    "displayName": "Event Hub",
+    "armType": "Microsoft.EventHub/namespaces",
+    "apiVersion": "2023-01-01-preview",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "select",
+        "defaultValue": "Standard",
+        "options": [
+          { "label": "Basic", "value": "Basic" },
+          { "label": "Standard", "value": "Standard" },
+          { "label": "Premium", "value": "Premium" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "log-analytics",
+    "displayName": "Log Analytics Workspace",
+    "armType": "Microsoft.OperationalInsights/workspaces",
+    "apiVersion": "2022-10-01",
+    "propertySchema": [
+      {
+        "key": "retentionDays",
+        "label": "Retention (days)",
+        "type": "number",
+        "defaultValue": 30
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "retentionDays": "properties.retentionInDays"
+      }
+    }
+  },
+  {
+    "key": "app-insights",
+    "displayName": "Application Insights",
+    "armType": "Microsoft.Insights/components",
+    "apiVersion": "2020-02-02",
+    "propertySchema": [
+      {
+        "key": "applicationType",
+        "label": "Application Type",
+        "type": "select",
+        "defaultValue": "web",
+        "options": [
+          { "label": "Web", "value": "web" },
+          { "label": "Other", "value": "other" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "applicationType": "properties.Application_Type"
+      }
+    }
+  },
+  {
+    "key": "dns-zone",
+    "displayName": "DNS Zone",
+    "armType": "Microsoft.Network/dnsZones",
+    "apiVersion": "2018-05-01",
+    "propertySchema": [
+      {
+        "key": "zoneType",
+        "label": "Zone Type",
+        "type": "radio",
+        "defaultValue": "Public",
+        "options": [
+          { "label": "Public", "value": "Public" },
+          { "label": "Private", "value": "Private" }
+        ]
+      }
+    ],
+    "armMapping": {}
+  },
+  {
+    "key": "front-door",
+    "displayName": "Front Door",
+    "armType": "Microsoft.Cdn/profiles",
+    "apiVersion": "2023-05-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Tier",
+        "type": "select",
+        "defaultValue": "Standard_AzureFrontDoor",
+        "options": [
+          { "label": "Standard", "value": "Standard_AzureFrontDoor" },
+          { "label": "Premium", "value": "Premium_AzureFrontDoor" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "vpn-gateway",
+    "displayName": "VPN Gateway",
+    "armType": "Microsoft.Network/virtualNetworkGateways",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "VpnGw1",
+        "options": [
+          { "label": "VpnGw1", "value": "VpnGw1" },
+          { "label": "VpnGw2", "value": "VpnGw2" },
+          { "label": "VpnGw3", "value": "VpnGw3" }
+        ]
+      },
+      {
+        "key": "gatewayType",
+        "label": "Gateway Type",
+        "type": "radio",
+        "defaultValue": "Vpn",
+        "options": [
+          { "label": "VPN", "value": "Vpn" },
+          { "label": "ExpressRoute", "value": "ExpressRoute" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "gatewayType": "properties.gatewayType"
+      }
+    }
+  },
+  {
+    "key": "container-apps",
+    "displayName": "Container App",
+    "armType": "Microsoft.App/containerApps",
+    "apiVersion": "2023-05-01",
+    "propertySchema": [
+      {
+        "key": "ingressEnabled",
+        "label": "Ingress Enabled",
+        "type": "boolean",
+        "defaultValue": true
+      },
+      {
+        "key": "targetPort",
+        "label": "Target Port",
+        "type": "number",
+        "defaultValue": 80
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "ingressEnabled": "properties.configuration.ingress.external",
+        "targetPort": "properties.configuration.ingress.targetPort"
+      }
+    }
+  },
+  {
+    "key": "static-web-app",
+    "displayName": "Static Web App",
+    "armType": "Microsoft.Web/staticSites",
+    "apiVersion": "2022-09-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Plan",
+        "type": "radio",
+        "defaultValue": "Free",
+        "options": [
+          { "label": "Free", "value": "Free" },
+          { "label": "Standard", "value": "Standard" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "signalr",
+    "displayName": "SignalR Service",
+    "armType": "Microsoft.SignalRService/signalR",
+    "apiVersion": "2023-02-01",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "Pricing Tier",
+        "type": "select",
+        "defaultValue": "Free_F1",
+        "options": [
+          { "label": "Free F1", "value": "Free_F1" },
+          { "label": "Standard S1", "value": "Standard_S1" },
+          { "label": "Premium P1", "value": "Premium_P1" }
+        ]
+      }
+    ],
+    "armMapping": { "skuProperty": "sku" }
+  },
+  {
+    "key": "mysql",
+    "displayName": "Azure Database for MySQL",
+    "armType": "Microsoft.DBforMySQL/flexibleServers",
+    "apiVersion": "2023-06-30",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "Standard_B1ms",
+        "options": [
+          { "label": "Burstable B1ms", "value": "Standard_B1ms" },
+          { "label": "General Purpose D2ds v4", "value": "Standard_D2ds_v4" },
+          { "label": "Memory Optimized E2ds v4", "value": "Standard_E2ds_v4" }
+        ]
+      },
+      {
+        "key": "version",
+        "label": "MySQL Version",
+        "type": "select",
+        "defaultValue": "8.0.21",
+        "options": [
+          { "label": "8.0", "value": "8.0.21" },
+          { "label": "5.7", "value": "5.7" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "version": "properties.version"
+      }
+    }
+  },
+  {
+    "key": "postgresql",
+    "displayName": "Azure Database for PostgreSQL",
+    "armType": "Microsoft.DBforPostgreSQL/flexibleServers",
+    "apiVersion": "2023-06-01-preview",
+    "propertySchema": [
+      {
+        "key": "sku",
+        "label": "SKU",
+        "type": "select",
+        "defaultValue": "Standard_B1ms",
+        "options": [
+          { "label": "Burstable B1ms", "value": "Standard_B1ms" },
+          { "label": "General Purpose D2ds v4", "value": "Standard_D2ds_v4" },
+          { "label": "Memory Optimized E2ds v4", "value": "Standard_E2ds_v4" }
+        ]
+      },
+      {
+        "key": "version",
+        "label": "PostgreSQL Version",
+        "type": "select",
+        "defaultValue": "16",
+        "options": [
+          { "label": "16", "value": "16" },
+          { "label": "15", "value": "15" },
+          { "label": "14", "value": "14" }
+        ]
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "version": "properties.version"
+      }
+    }
+  }
+]

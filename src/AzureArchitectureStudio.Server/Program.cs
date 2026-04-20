@@ -34,9 +34,12 @@ builder.Services.AddDbContext<DesignDbContext>(options => options.UseInMemoryDat
 
 builder.Services.AddSingleton<ICryptoService, CryptoService>();
 
+builder.Services.AddHttpClient();
+
 builder.Services.AddSingleton<ITelemetryInitializer, AdsTelemetryInitializer>();
 builder.Services.AddApplicationInsightsTelemetry();
 
+builder.Services.AddControllers();
 builder.Services.AddRazorPages();
 builder.Services.AddGrpc();
 
@@ -87,7 +90,11 @@ app.MapGrpcService<DeployService>().EnableGrpcWeb();
     }
 #endif
 
+app.MapControllers();
 app.MapRazorPages();
+
+// In production, serve the React SPA from wwwroot
+// During development, use Vite dev server on port 3000 with proxy
 app.MapFallbackToFile("index.html");
 
 app.Run();

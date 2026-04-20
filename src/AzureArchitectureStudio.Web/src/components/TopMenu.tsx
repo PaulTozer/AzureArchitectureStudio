@@ -1,0 +1,291 @@
+import { useState, useCallback } from 'react';
+import {
+  Toolbar,
+  ToolbarButton,
+  ToolbarDivider,
+  Menu,
+  MenuTrigger,
+  MenuList,
+  MenuPopover,
+  MenuItem,
+  Dialog,
+  DialogTrigger,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogContent,
+  DialogActions,
+  Button,
+  Input,
+  Spinner,
+  Toast,
+  Toaster,
+  useToastController,
+  useId,
+} from '@fluentui/react-components';
+import {
+  PersonRegular,
+  ArrowExportRegular,
+  SaveRegular,
+  FolderOpenRegular,
+  DocumentRegular,
+  ImageRegular,
+  CodeRegular,
+  DeleteRegular,
+  SignOutRegular,
+} from '@fluentui/react-icons';
+import { useMsal, useIsAuthenticated } from '@azure/msal-react';
+import { useAppContext } from '../context/AppContext';
+import { loginRequest, bicepService } from '../services';
+import {
+  createArmTemplate,
+  getArmResourcesForNode,
+  type AzureNodeData,
+} from '../models';
+import { toPng } from 'html-to-image';
+import CodeDrawer from './drawers/CodeDrawer';
+import SaveDrawer from './drawers/SaveDrawer';
+import './TopMenu.css';
+
+export default function TopMenu() {
+  const { instance, accounts } = useMsal();
+  const isAuthenticated = useIsAuthenticated();
+  const { nodes, edges } = useAppContext();
+  const toasterId = useId('toaster');
+  const { dispatchToast } = useToastController(toasterId);
+
+  const [codeDrawerOpen, setCodeDrawerOpen] = useState(false);
+  const [codeDrawerContent, setCodeDrawerContent] = useState<{
+    type: 'arm' | 'bicep';
+    content: string;
+  } | null>(null);
+  const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [imgPreview, setImgPreview] = useState<string | null>(null);
+
+  const showToast = useCallback(
+    (message: string, intent: 'success' | 'error' | 'warning' | 'info') => {
+      dispatchToast(<Toast>{message}</Toast>, { intent });
+    },
+    [dispatchToast]
+  );
+
+  const handleLogin = useCallback(async () => {
+    try {
+      await instance.loginPopup(loginRequest);
+    } catch (err) {
+      console.error('Login failed:', err);
+    }
+  }, [instance]);
+
+  const handleLogout = useCallback(async () => {
+    await instance.logoutPopup();
+  }, [instance]);
+
+  // Generate ARM JSON from current diagram
+  const generateArmJson = useCallback((): string | null => {
+    if (nodes.length === 0) {
+      showToast('There is nothing to export.', 'warning');
+      return null;
+    }
+
+    const template = createArmTemplate();
+
+    for (const node of nodes) {
+      const data = node.data as AzureNodeData;
+      const { resources, parameters } = getArmResourcesForNode(
+        data.typeKey,
+        data.name,
+        data.properties
+      );
+      template.resources.push(...resources);
+      Object.assign(template.parameters, parameters);
+    }
+
+    return JSON.stringify(template, null, 2);
+  }, [nodes, showToast]);
+
+  const handleExportArm = useCallback(() => {
+    const json = generateArmJson();
+    if (!json) return;
+    setCodeDrawerContent({ type: 'arm', content: json });
+    setCodeDrawerOpen(true);
+  }, [generateArmJson]);
+
+  const handleExportBicep = useCallback(async () => {
+    const json = generateArmJson();
+    if (!json) return;
+
+    setLoading(true);
+    try {
+      const result = await bicepService.decompile(json);
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
+      setCodeDrawerContent({ type: 'bicep', content: result.bicepFile ?? '' });
+      setCodeDrawerOpen(true);
+    } catch (err) {
+      showToast('Failed to decompile to Bicep.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [generateArmJson, showToast]);
+
+  const handleExportImage = useCallback(async () => {
+    const canvas = document.querySelector('.react-flow') as HTMLElement;
+    if (!canvas) return;
+
+    try {
+      const dataUrl = await toPng(canvas, {
+        backgroundColor: '#ffffff',
+        quality: 1,
+      });
+      setImgPreview(dataUrl);
+    } catch (err) {
+      showToast('Failed to export image.', 'error');
+    }
+  }, [showToast]);
+
+  const handleDownloadImage = useCallback(() => {
+    if (!imgPreview) return;
+    const link = document.createElement('a');
+    link.download = 'azure-architecture.png';
+    link.href = imgPreview;
+    link.click();
+    setImgPreview(null);
+  }, [imgPreview]);
+
+  const userName = accounts[0]?.name ?? accounts[0]?.username;
+
+  return (
+    <>
+      <Toaster toasterId={toasterId} position="top-end" />
+      <div className="top-menu">
+        <Toolbar size="small">
+          {/* Export menu */}
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <ToolbarButton icon={<ArrowExportRegular />}>
+                Export
+              </ToolbarButton>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem
+                  icon={<DocumentRegular />}
+                  onClick={handleExportArm}
+                >
+                  ARM Template
+                </MenuItem>
+                <MenuItem icon={<CodeRegular />} onClick={handleExportBicep}>
+                  Bicep
+                </MenuItem>
+                <MenuItem
+                  icon={<ImageRegular />}
+                  onClick={handleExportImage}
+                >
+                  Export as Image
+                </MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+
+          {/* Save/Load */}
+          <ToolbarButton
+            icon={<SaveRegular />}
+            onClick={() => setSaveDrawerOpen(true)}
+          >
+            Save / Load
+          </ToolbarButton>
+
+          <ToolbarDivider />
+
+          {/* User */}
+          {isAuthenticated ? (
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <ToolbarButton icon={<PersonRegular />}>
+                  {userName}
+                </ToolbarButton>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem
+                    icon={<SignOutRegular />}
+                    onClick={handleLogout}
+                  >
+                    Sign out
+                  </MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          ) : (
+            <ToolbarButton
+              icon={<PersonRegular />}
+              onClick={handleLogin}
+            >
+              Sign in
+            </ToolbarButton>
+          )}
+        </Toolbar>
+
+        {loading && (
+          <div className="top-menu-loading">
+            <Spinner size="tiny" label="Working hard on it..." />
+          </div>
+        )}
+      </div>
+
+      {/* Code drawer */}
+      {codeDrawerOpen && codeDrawerContent && (
+        <CodeDrawer
+          type={codeDrawerContent.type}
+          content={codeDrawerContent.content}
+          open={codeDrawerOpen}
+          onClose={() => {
+            setCodeDrawerOpen(false);
+            setCodeDrawerContent(null);
+          }}
+        />
+      )}
+
+      {/* Save drawer */}
+      {saveDrawerOpen && (
+        <SaveDrawer
+          open={saveDrawerOpen}
+          onClose={() => setSaveDrawerOpen(false)}
+        />
+      )}
+
+      {/* Image preview dialog */}
+      <Dialog
+        open={!!imgPreview}
+        onOpenChange={() => setImgPreview(null)}
+      >
+        <DialogSurface style={{ maxWidth: '90vw' }}>
+          <DialogBody>
+            <DialogTitle>Export Preview</DialogTitle>
+            <DialogContent>
+              {imgPreview && (
+                <img
+                  src={imgPreview}
+                  alt="Architecture diagram"
+                  style={{ maxWidth: '100%', border: '1px solid #e0e0e0' }}
+                />
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setImgPreview(null)}>
+                Close
+              </Button>
+              <Button appearance="primary" onClick={handleDownloadImage}>
+                Download
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </>
+  );
+}

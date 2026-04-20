@@ -1,0 +1,47 @@
+.azure-group {
+  min-width: 200px;
+  min-height: 150px;
+  padding: 8px;
+  border: 2px dashed #0078d4;
+  border-radius: 6px;
+  background: rgba(0, 120, 212, 0.04);
+  position: relative;
+}
+
+.azure-group.selected {
+  border-color: #005a9e;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.3);
+}
+
+.azure-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 120, 212, 0.15);
+  margin-bottom: 8px;
+}
+
+.azure-group-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.azure-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #323130;
+}
+
+.azure-group-warning {
+  color: #d83b01;
+  font-size: 14px;
+  margin-left: auto;
+}
+
+.azure-group .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: #0078d4;
+  border: 2px solid #fff;
+}

@@ -1,0 +1,38 @@
+.stencil-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 72px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  cursor: grab;
+  transition: background 0.15s;
+}
+
+.stencil-item:hover {
+  background: var(--colorNeutralBackground1Hover);
+}
+
+.stencil-item:active {
+  cursor: grabbing;
+}
+
+.stencil-icon {
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+}
+
+.stencil-label {
+  margin-top: 2px;
+  font-size: 10px;
+  text-align: center;
+  color: var(--colorNeutralForeground2);
+  line-height: 1.2;
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
