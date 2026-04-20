@@ -185,16 +185,20 @@ function resolveLocalRef(root: any, ref: string): any {
 // JSON Schema → PropertyField[] conversion
 // ---------------------------------------------------------------------------
 
+/** Max nesting depth to prevent infinite recursion on circular $refs */
+const MAX_DEPTH = 3;
+
 function convertProperties(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties: Record<string, any>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   root: any,
+  depth = 0,
 ): PropertyField[] {
   const fields: PropertyField[] = [];
   for (const [key, prop] of Object.entries(properties)) {
-    const field = convertSingleProperty(key, prop, root);
-    if (field) fields.push(field);
+    const result = convertSingleProperty(key, prop, root, depth);
+    if (result) fields.push(result);
   }
   return fields;
 }
@@ -205,6 +209,7 @@ function convertSingleProperty(
   prop: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   root: any,
+  depth: number,
 ): PropertyField | null {
   const label = humanize(key);
   const description = prop.description as string | undefined;
@@ -213,6 +218,10 @@ function convertSingleProperty(
   // an expression alternative we can ignore.
   let resolvedType: string | undefined = prop.type;
   let resolvedEnum: string[] | undefined = prop.enum;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let resolvedItems: any = undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let resolvedObjectDef: any = undefined;
 
   if (Array.isArray(prop.oneOf)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,36 +229,105 @@ function convertSingleProperty(
     if (actual) {
       resolvedType = actual.type;
       resolvedEnum = actual.enum;
+      resolvedItems = actual.items;
     } else {
-      // All items are $refs — likely complex nested objects, skip.
-      // But first check if any local $ref resolves to an enum.
+      // All items are $refs — check what they resolve to
       for (const item of prop.oneOf) {
         if (item.$ref?.startsWith('#/')) {
           const resolved = resolveLocalRef(root, item.$ref);
-          if (resolved?.enum) {
+          if (!resolved) continue;
+          if (resolved.enum) {
             resolvedEnum = resolved.enum;
             resolvedType = resolved.type ?? 'string';
             break;
           }
-          // Complex object — skip this property
+          // Object definition — can be rendered as a nested group
+          if (resolved.properties && depth < MAX_DEPTH) {
+            resolvedObjectDef = resolved;
+            break;
+          }
         }
       }
-      if (!resolvedEnum) return null;
+      if (!resolvedEnum && !resolvedObjectDef) return null;
     }
   }
 
   // $ref to a definition (not inside oneOf)
-  if (prop.$ref?.startsWith('#/')) {
+  if (!resolvedType && !resolvedEnum && !resolvedObjectDef && prop.$ref?.startsWith('#/')) {
     const resolved = resolveLocalRef(root, prop.$ref);
-    if (resolved?.enum) {
+    if (!resolved) return null;
+    if (resolved.enum) {
       resolvedEnum = resolved.enum;
       resolvedType = resolved.type ?? 'string';
+    } else if (resolved.properties && depth < MAX_DEPTH) {
+      resolvedObjectDef = resolved;
     } else {
-      return null; // Complex nested type
+      return null;
     }
   }
 
-  // Enum → select dropdown
+  // --- Nested object → 'object' field with children ---
+  if (resolvedObjectDef?.properties) {
+    const children = convertProperties(resolvedObjectDef.properties, root, depth + 1);
+    if (children.length === 0) return null;
+    return { key, label, type: 'object', children };
+  }
+
+  // --- Array handling ---
+  if (resolvedType === 'array') {
+    // Array items can be $ref (objects) or simple types
+    const items = resolvedItems ?? prop.items;
+    if (!items) return null;
+
+    // Simple string/number array
+    if (items.type === 'string') {
+      return {
+        key,
+        label,
+        type: 'array',
+        defaultValue: [],
+        itemSchema: { key: 'value', label: 'Value', type: 'string', placeholder: description },
+      };
+    }
+
+    // Array of objects via $ref
+    if (items.$ref?.startsWith('#/') && depth < MAX_DEPTH) {
+      const itemDef = resolveLocalRef(root, items.$ref);
+      if (!itemDef) return null;
+
+      // ARM resource items have a "properties" field containing a $ref to
+      // a "...PropertiesFormat" definition — resolve that too.
+      let childProps: PropertyField[] = [];
+      const innerPropsSpec = itemDef.properties?.properties;
+      if (innerPropsSpec) {
+        const innerDef = resolvePropertySpec(innerPropsSpec, root);
+        if (innerDef?.properties) {
+          childProps = convertProperties(innerDef.properties, root, depth + 1);
+        }
+      }
+
+      // Also pick up direct simple fields from the item definition (like "name")
+      const directFields: PropertyField[] = [];
+      if (itemDef.properties) {
+        for (const [k, v] of Object.entries(itemDef.properties)) {
+          // Skip meta fields and the nested "properties" we already handled
+          if (['id', 'etag', 'type', 'properties'].includes(k)) continue;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const f = convertSingleProperty(k, v as any, root, depth + 1);
+          if (f) directFields.push(f);
+        }
+      }
+
+      const allChildren = [...directFields, ...childProps];
+      if (allChildren.length === 0) return null;
+
+      return { key, label, type: 'object-array', children: allChildren, defaultValue: [] };
+    }
+
+    return null;
+  }
+
+  // --- Enum → select dropdown ---
   if (resolvedEnum && resolvedEnum.length > 0) {
     return {
       key,

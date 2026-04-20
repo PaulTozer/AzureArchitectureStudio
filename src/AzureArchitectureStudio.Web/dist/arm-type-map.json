@@ -1,0 +1,88 @@
+{
+  "virtual-machines": "Microsoft.Compute/virtualMachines",
+  "virtual-machine-scale-sets": "Microsoft.Compute/virtualMachineScaleSets",
+  "disks": "Microsoft.Compute/disks",
+  "availability-sets": "Microsoft.Compute/availabilitySets",
+  "images": "Microsoft.Compute/images",
+  "proximity-placement-groups": "Microsoft.Compute/proximityPlacementGroups",
+  "shared-image-galleries": "Microsoft.Compute/galleries",
+  "ssh-keys": "Microsoft.Compute/sshPublicKeys",
+
+  "virtual-networks": "Microsoft.Network/virtualNetworks",
+  "network-interfaces": "Microsoft.Network/networkInterfaces",
+  "network-security-groups": "Microsoft.Network/networkSecurityGroups",
+  "public-ip-addresses": "Microsoft.Network/publicIPAddresses",
+  "load-balancers": "Microsoft.Network/loadBalancers",
+  "application-gateways": "Microsoft.Network/applicationGateways",
+  "route-tables": "Microsoft.Network/routeTables",
+  "nat-gateways": "Microsoft.Network/natGateways",
+  "bastion-hosts": "Microsoft.Network/bastionHosts",
+  "private-endpoints": "Microsoft.Network/privateEndpoints",
+  "private-link-services": "Microsoft.Network/privateLinkServices",
+  "virtual-network-gateways": "Microsoft.Network/virtualNetworkGateways",
+  "connections": "Microsoft.Network/connections",
+  "express-route-circuits": "Microsoft.Network/expressRouteCircuits",
+  "azure-firewalls": "Microsoft.Network/azureFirewalls",
+  "ip-groups": "Microsoft.Network/ipGroups",
+  "ddos-protection-plans": "Microsoft.Network/ddosProtectionPlans",
+  "traffic-manager-profiles": "Microsoft.Network/trafficmanagerprofiles",
+  "web-application-firewall-policies": "Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies",
+
+  "storage-accounts": "Microsoft.Storage/storageAccounts",
+
+  "app-services": "Microsoft.Web/sites",
+  "app-service-plans": "Microsoft.Web/serverfarms",
+  "function-apps": "Microsoft.Web/sites",
+  "static-web-apps": "Microsoft.Web/staticSites",
+  "app-service-certificates": "Microsoft.Web/certificates",
+
+  "sql-servers": "Microsoft.Sql/servers",
+  "sql-databases": "Microsoft.Sql/servers/databases",
+  "sql-elastic-pools": "Microsoft.Sql/servers/elasticPools",
+  "sql-managed-instances": "Microsoft.Sql/managedInstances",
+
+  "azure-cosmos-db": "Microsoft.DocumentDB/databaseAccounts",
+
+  "key-vaults": "Microsoft.KeyVault/vaults",
+
+  "kubernetes-services": "Microsoft.ContainerService/managedClusters",
+
+  "container-registries": "Microsoft.ContainerRegistry/registries",
+  "container-instances": "Microsoft.ContainerInstance/containerGroups",
+
+  "container-apps": "Microsoft.App/containerApps",
+  "container-apps-environments": "Microsoft.App/managedEnvironments",
+
+  "azure-cache-for-redis": "Microsoft.Cache/redis",
+
+  "api-management-services": "Microsoft.ApiManagement/service",
+
+  "service-bus-namespaces": "Microsoft.ServiceBus/namespaces",
+
+  "event-hubs": "Microsoft.EventHub/namespaces",
+  "event-hub-clusters": "Microsoft.EventHub/clusters",
+
+  "cognitive-services": "Microsoft.CognitiveServices/accounts",
+  "azure-openai": "Microsoft.CognitiveServices/accounts",
+
+  "azure-database-for-mysql-servers": "Microsoft.DBforMySQL/servers",
+  "azure-database-for-mysql-flexible-servers": "Microsoft.DBforMySQL/flexibleServers",
+
+  "azure-database-for-postgresql-servers": "Microsoft.DBforPostgreSQL/servers",
+  "azure-database-for-postgresql-flexible-servers": "Microsoft.DBforPostgreSQL/flexibleServers",
+
+  "signalr": "Microsoft.SignalRService/signalR",
+
+  "log-analytics-workspaces": "Microsoft.OperationalInsights/workspaces",
+
+  "managed-identities": "Microsoft.ManagedIdentity/userAssignedIdentities",
+
+  "event-grid-topics": "Microsoft.EventGrid/topics",
+  "event-grid-domains": "Microsoft.EventGrid/domains",
+
+  "cdn-profiles": "Microsoft.Cdn/profiles",
+
+  "application-insights": "Microsoft.Insights/components",
+
+  "azure-front-door-profiles": "Microsoft.Cdn/profiles"
+}

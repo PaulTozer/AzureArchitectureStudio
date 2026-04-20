@@ -11,13 +11,16 @@ import {
 export interface PropertyField {
   key: string;
   label: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array';
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
   placeholder?: string;
   required?: boolean;
+  /** Schema for items in a simple string array */
   itemSchema?: PropertyField;
   visibleWhen?: { field: string; value: string };
+  /** Child fields for 'object' and 'object-array' types */
+  children?: PropertyField[];
 }
 
 export interface ArmMappingDef {
@@ -32,6 +35,7 @@ export interface ResourceTypeDefinition {
   armType: string;
   apiVersion: string;
   isGroup?: boolean;
+  groupVariant?: 'resource-group' | 'vnet' | 'subnet';
   groupStyle?: { width: number; height: number };
   armDefaults?: Record<string, unknown>;
   propertySchema: PropertyField[];
@@ -87,6 +91,10 @@ export function isGroupType(key: string): boolean {
 
 export function getGroupStyle(key: string): { width: number; height: number } | undefined {
   return registry.get(key)?.groupStyle;
+}
+
+export function getGroupVariant(key: string): string | undefined {
+  return registry.get(key)?.groupVariant;
 }
 
 export function getDisplayName(key: string): string {

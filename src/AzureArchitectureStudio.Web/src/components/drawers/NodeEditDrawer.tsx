@@ -48,7 +48,7 @@ export default function NodeEditDrawer({
     // Attempt dynamic ARM schema resolution
     let cancelled = false;
     setLoading(true);
-    getResourceTypeAsync(data.typeKey, data.label).then((def) => {
+    getResourceTypeAsync(data.typeKey).then((def) => {
       if (!cancelled) {
         setResourceDef(def);
         setLoading(false);

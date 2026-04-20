@@ -10,6 +10,7 @@ export {
   getAllResourceTypes,
   isGroupType,
   getGroupStyle,
+  getGroupVariant,
   getDisplayName,
   getDefaultProperties,
   getArmType,

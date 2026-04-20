@@ -1,14 +1,16 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { AzureNodeData } from '../../models';
+import { getGroupVariant } from '../../models';
 import { WarningFilled } from '@fluentui/react-icons';
 import './AzureGroup.css';
 
 function AzureGroupComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as AzureNodeData;
+  const variant = getGroupVariant(nodeData.typeKey) ?? 'resource-group';
   return (
     <div
-      className={`azure-group ${selected ? 'selected' : ''}`}
+      className={`azure-group azure-group--${variant} ${selected ? 'selected' : ''}`}
     >
       <Handle type="target" position={Position.Top} id="top" />
       <Handle type="target" position={Position.Left} id="left" />
