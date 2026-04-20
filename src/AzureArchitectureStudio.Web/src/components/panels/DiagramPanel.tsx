@@ -26,7 +26,7 @@ import {
   DialogContent,
   DialogActions,
 } from '@fluentui/react-components';
-import { EditRegular, DeleteRegular } from '@fluentui/react-icons';
+import { EditRegular, DeleteRegular, PinRegular, PinOffRegular } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
 import {
   type AzureNodeData,
@@ -40,6 +40,9 @@ import {
 import AzureNodeComponent from '../nodes/AzureNode';
 import AzureGroupComponent from '../nodes/AzureGroup';
 import NodeEditDrawer from '../drawers/NodeEditDrawer';
+import { useSubnetSync } from '../../hooks/useSubnetSync';
+import { useBindingSync, canBind, cornerPosition, nextCorner } from '../../hooks/useBindingSync';
+import type { AzureNodeData as AzureNodeDataType, BindingCorner } from '../../models';
 import './DiagramPanel.css';
 
 const nodeTypes: NodeTypes = {
@@ -66,6 +69,12 @@ export default function DiagramPanel() {
   const reactFlowInstance = useRef<ReactFlowInstance<AzureNode, AzureEdge> | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Sync VNet subnet properties → child group nodes on the diagram
+  useSubnetSync(nodes, setNodes);
+
+  // Keep bound nodes anchored to their corner on parent resize
+  useBindingSync(nodes, setNodes);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -134,10 +143,61 @@ export default function DiagramPanel() {
       const groupDims = getGroupStyle(stencilKey);
       const defaultProps = getDefaultProperties(stencilKey);
 
-      const newNode = {
+      // Default: absolute position; will be made relative if inside a group
+      let nodePosition = { ...position };
+
+      // Find the smallest group node that contains the drop position
+      // (smallest = most deeply nested, i.e. drop into subnet before vnet)
+      // screenToFlowPosition returns absolute coordinates, so we need absolute
+      // node positions for the hit test.
+      let parentGroup: AzureNode | undefined;
+      const currentNodes = reactFlowInstance.current?.getNodes() as AzureNode[] | undefined;
+      if (currentNodes) {
+        // Build a lookup for absolute positions
+        const absPos = new Map<string, { x: number; y: number }>();
+        for (const n of currentNodes) {
+          const px = n.parentId ? absPos.get(n.parentId) : undefined;
+          absPos.set(n.id, {
+            x: n.position.x + (px?.x ?? 0),
+            y: n.position.y + (px?.y ?? 0),
+          });
+        }
+
+        const candidateGroups = currentNodes.filter((n) => {
+          if (n.type !== 'azureGroup') return false;
+          const w = (n.measured?.width ?? n.width ?? 0);
+          const h = (n.measured?.height ?? n.height ?? 0);
+          const ap = absPos.get(n.id)!;
+          return (
+            position.x >= ap.x &&
+            position.x <= ap.x + w &&
+            position.y >= ap.y &&
+            position.y <= ap.y + h
+          );
+        });
+        // Pick the smallest group (most specific container)
+        if (candidateGroups.length > 0) {
+          parentGroup = candidateGroups.reduce((smallest, g) => {
+            const sArea = (smallest.measured?.width ?? smallest.width ?? 0) * (smallest.measured?.height ?? smallest.height ?? 0);
+            const gArea = (g.measured?.width ?? g.width ?? 0) * (g.measured?.height ?? g.height ?? 0);
+            return gArea < sArea ? g : smallest;
+          });
+        }
+
+        // Compute position relative to parent if nested
+        if (parentGroup) {
+          const parentAbs = absPos.get(parentGroup.id)!;
+          nodePosition = {
+            x: position.x - parentAbs.x,
+            y: position.y - parentAbs.y,
+          };
+        }
+      }
+
+      const newNode: AzureNode = {
         id: `azure-${++nodeIdCounter}-${Date.now()}`,
         type: isGroup ? 'azureGroup' : 'azureNode',
-        position,
+        position: nodePosition,
         data: {
           typeKey: stencilKey,
           imagePath: iconPath,
@@ -147,6 +207,7 @@ export default function DiagramPanel() {
           isValid: true,
           properties: defaultProps,
         } satisfies AzureNodeData,
+        ...(parentGroup ? { parentId: parentGroup.id, extent: 'parent' as const } : {}),
         ...(isGroup && groupDims
           ? { style: { width: groupDims.width, height: groupDims.height } }
           : {}),
@@ -169,6 +230,65 @@ export default function DiagramPanel() {
   }, [setSelectedNodeId]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+
+  // Determine if the selected node can be bound / is already bound
+  const selectedData = selectedNode?.data as AzureNodeDataType | undefined;
+  const parentNode = selectedNode?.parentId
+    ? nodes.find((n) => n.id === selectedNode.parentId)
+    : undefined;
+  const parentData = parentNode?.data as AzureNodeDataType | undefined;
+  const showBind =
+    selectedData &&
+    parentData &&
+    !selectedData.binding &&
+    canBind(selectedData.typeKey, parentData.typeKey);
+  const showUnbind = !!selectedData?.binding;
+
+  const handleBind = useCallback(
+    (corner: BindingCorner = 'bottom-left') => {
+      if (!selectedNodeId || !parentNode) return;
+      const parentW =
+        parentNode.measured?.width ??
+        parentNode.width ??
+        (parentNode.style?.width as number | undefined) ??
+        250;
+      const parentH =
+        parentNode.measured?.height ??
+        parentNode.height ??
+        (parentNode.style?.height as number | undefined) ??
+        200;
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== selectedNodeId) return n;
+          const nodeW = n.measured?.width ?? n.width ?? 80;
+          const nodeH = n.measured?.height ?? n.height ?? 80;
+          const pos = cornerPosition(corner, parentW, parentH, nodeW, nodeH);
+          return {
+            ...n,
+            position: pos,
+            data: { ...n.data, binding: { corner } },
+          };
+        }),
+      );
+    },
+    [selectedNodeId, parentNode, setNodes],
+  );
+
+  const handleUnbind = useCallback(() => {
+    if (!selectedNodeId) return;
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (n.id !== selectedNodeId) return n;
+        const { binding: _, ...rest } = n.data as AzureNodeDataType;
+        return { ...n, data: rest as AzureNodeDataType };
+      }),
+    );
+  }, [selectedNodeId, setNodes]);
+
+  const handleCycleCorner = useCallback(() => {
+    if (!selectedNodeId || !selectedData?.binding) return;
+    handleBind(nextCorner(selectedData.binding.corner));
+  }, [selectedNodeId, selectedData, handleBind]);
 
   const handleDelete = useCallback(() => {
     if (!selectedNodeId) return;
@@ -223,6 +343,39 @@ export default function DiagramPanel() {
           >
             Edit
           </Button>
+          {showBind && (
+            <Button
+              appearance="subtle"
+              icon={<PinRegular />}
+              size="small"
+              onClick={() => handleBind('bottom-left')}
+              title="Bind to corner of parent group"
+            >
+              Bind
+            </Button>
+          )}
+          {showUnbind && (
+            <>
+              <Button
+                appearance="subtle"
+                icon={<PinRegular />}
+                size="small"
+                onClick={handleCycleCorner}
+                title={`Move to next corner (currently ${selectedData?.binding?.corner})`}
+              >
+                {selectedData?.binding?.corner}
+              </Button>
+              <Button
+                appearance="subtle"
+                icon={<PinOffRegular />}
+                size="small"
+                onClick={handleUnbind}
+                title="Unbind from corner"
+              >
+                Unbind
+              </Button>
+            </>
+          )}
           <Dialog
             open={deleteConfirmOpen}
             onOpenChange={(_, d) => setDeleteConfirmOpen(d.open)}

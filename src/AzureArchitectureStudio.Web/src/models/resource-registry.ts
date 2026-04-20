@@ -94,6 +94,8 @@ export function getGroupStyle(key: string): { width: number; height: number } | 
 }
 
 export function getGroupVariant(key: string): string | undefined {
+  // Subnet nodes are generated from VNet properties, not from the registry
+  if (key === 'subnet') return 'subnet';
   return registry.get(key)?.groupVariant;
 }
 

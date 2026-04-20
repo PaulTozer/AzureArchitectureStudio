@@ -2,11 +2,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   background: #fff;
-  min-width: 80px;
+  min-width: 60px;
+  max-width: 90px;
   cursor: grab;
   position: relative;
 }
@@ -17,20 +18,22 @@
 }
 
 .azure-node-icon {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   pointer-events: none;
+  object-fit: contain;
 }
 
 .azure-node-label {
-  margin-top: 4px;
-  font-size: 11px;
+  margin-top: 2px;
+  font-size: 9px;
   text-align: center;
   color: #323130;
-  max-width: 100px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
 .azure-node-warning {

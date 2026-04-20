@@ -1,17 +1,31 @@
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 import type { AzureNodeData } from '../../models';
 import { getGroupVariant } from '../../models';
 import { WarningFilled } from '@fluentui/react-icons';
 import './AzureGroup.css';
 
+const variantColors: Record<string, string> = {
+  vnet: '#0078d4',
+  subnet: '#888888',
+  'resource-group': '#a0a0a0',
+};
+
 function AzureGroupComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as AzureNodeData;
   const variant = getGroupVariant(nodeData.typeKey) ?? 'resource-group';
+  const resizerColor = variantColors[variant] ?? '#a0a0a0';
   return (
     <div
       className={`azure-group azure-group--${variant} ${selected ? 'selected' : ''}`}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={120}
+        minHeight={80}
+        lineStyle={{ stroke: resizerColor, strokeWidth: 1 }}
+        handleStyle={{ width: 8, height: 8, borderRadius: 2, background: resizerColor, border: 'none' }}
+      />
       <Handle type="target" position={Position.Top} id="top" />
       <Handle type="target" position={Position.Left} id="left" />
       <div className="azure-group-header">

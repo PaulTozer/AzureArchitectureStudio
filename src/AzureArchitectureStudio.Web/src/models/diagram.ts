@@ -12,6 +12,9 @@ export enum PortAlignment {
   TopLeft = 7,
 }
 
+/** Which corner a bound node is anchored to inside its parent group */
+export type BindingCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 // Data attached to each Azure resource node in the React Flow canvas
 export interface AzureNodeData extends Record<string, unknown> {
   typeKey: string;
@@ -22,6 +25,8 @@ export interface AzureNodeData extends Record<string, unknown> {
   isValid: boolean;
   // Resource-specific properties stored as a generic bag
   properties: Record<string, unknown>;
+  /** When set, this node is anchored to a corner of its parent group */
+  binding?: { corner: BindingCorner };
 }
 
 // The diagram graph DTO for save/load (matches C# DiagramGraph)

@@ -21,7 +21,7 @@
     "groupVariant": "resource-group"
   },
   {
-    "key": "virtual-network",
+    "key": "virtual-networks",
     "displayName": "Virtual Network",
     "armType": "Microsoft.Network/virtualNetworks",
     "apiVersion": "2023-04-01",
@@ -64,6 +64,81 @@
         "label": "VM Protection",
         "type": "boolean",
         "defaultValue": false
+      },
+      {
+        "key": "subnets",
+        "label": "Subnets",
+        "type": "object-array",
+        "defaultValue": [
+          {
+            "name": "default",
+            "addressPrefix": "10.0.0.0/24"
+          }
+        ],
+        "children": [
+          {
+            "key": "name",
+            "label": "Name",
+            "type": "string",
+            "placeholder": "e.g. default",
+            "required": true
+          },
+          {
+            "key": "addressPrefix",
+            "label": "Address Prefix",
+            "type": "string",
+            "placeholder": "e.g. 10.0.0.0/24",
+            "required": true
+          },
+          {
+            "key": "privateEndpointNetworkPolicies",
+            "label": "Private Endpoint Policies",
+            "type": "select",
+            "defaultValue": "Disabled",
+            "options": [
+              {
+                "label": "Disabled",
+                "value": "Disabled"
+              },
+              {
+                "label": "Enabled",
+                "value": "Enabled"
+              }
+            ]
+          },
+          {
+            "key": "delegations",
+            "label": "Subnet Delegation",
+            "type": "select",
+            "defaultValue": "",
+            "options": [
+              {
+                "label": "None",
+                "value": ""
+              },
+              {
+                "label": "App Service (serverFarms)",
+                "value": "Microsoft.Web/serverFarms"
+              },
+              {
+                "label": "Container Instances",
+                "value": "Microsoft.ContainerInstance/containerGroups"
+              },
+              {
+                "label": "SQL Managed Instance",
+                "value": "Microsoft.Sql/managedInstances"
+              },
+              {
+                "label": "PostgreSQL Flexible Server",
+                "value": "Microsoft.DBforPostgreSQL/flexibleServers"
+              },
+              {
+                "label": "Container Apps Environment",
+                "value": "Microsoft.App/environments"
+              }
+            ]
+          }
+        ]
       }
     ],
     "armMapping": {
@@ -74,82 +149,6 @@
       }
     },
     "groupVariant": "vnet"
-  },
-  {
-    "key": "subnet",
-    "displayName": "Subnet",
-    "armType": "Microsoft.Network/virtualNetworks/subnets",
-    "apiVersion": "2023-04-01",
-    "propertySchema": [
-      {
-        "key": "addressPrefix",
-        "label": "Address Prefix",
-        "type": "string",
-        "defaultValue": "10.0.0.0/24",
-        "placeholder": "e.g. 10.0.0.0/24",
-        "required": true
-      },
-      {
-        "key": "serviceEndpoints",
-        "label": "Service Endpoints (comma-separated)",
-        "type": "string",
-        "placeholder": "Microsoft.Storage, Microsoft.Sql"
-      },
-      {
-        "key": "privateEndpointNetworkPolicies",
-        "label": "Private Endpoint Policies",
-        "type": "select",
-        "defaultValue": "Disabled",
-        "options": [
-          {
-            "label": "Disabled",
-            "value": "Disabled"
-          },
-          {
-            "label": "Enabled",
-            "value": "Enabled"
-          }
-        ]
-      },
-      {
-        "key": "delegations",
-        "label": "Subnet Delegation",
-        "type": "select",
-        "defaultValue": "",
-        "options": [
-          {
-            "label": "None",
-            "value": ""
-          },
-          {
-            "label": "App Service (serverFarms)",
-            "value": "Microsoft.Web/serverFarms"
-          },
-          {
-            "label": "Container Instances",
-            "value": "Microsoft.ContainerInstance/containerGroups"
-          },
-          {
-            "label": "SQL Managed Instance",
-            "value": "Microsoft.Sql/managedInstances"
-          },
-          {
-            "label": "PostgreSQL Flexible Server",
-            "value": "Microsoft.DBforPostgreSQL/flexibleServers"
-          },
-          {
-            "label": "Container Apps Environment",
-            "value": "Microsoft.App/environments"
-          }
-        ]
-      }
-    ],
-    "armMapping": {
-      "propertyMappings": {
-        "addressPrefix": "properties.addressPrefix",
-        "privateEndpointNetworkPolicies": "properties.privateEndpointNetworkPolicies"
-      }
-    }
   },
   {
     "key": "virtual-machine",
@@ -827,7 +826,8 @@
           "description": "Password of the SQL server administrator."
         }
       ]
-    }
+    },
+    "groupVariant": "resource-group"
   },
   {
     "key": "sql-database",
@@ -1006,7 +1006,8 @@
       "propertyMappings": {
         "zoneRedundant": "properties.zoneRedundant"
       }
-    }
+    },
+    "groupVariant": "resource-group"
   },
   {
     "key": "web-app",
@@ -3211,58 +3212,5 @@
         }
       ]
     }
-  },
-  {
-    "key": "subnet",
-    "displayName": "Subnet",
-    "armType": "Microsoft.Network/virtualNetworks/subnets",
-    "apiVersion": "2023-04-01",
-    "isGroup": true,
-    "groupVariant": "subnet",
-    "groupStyle": {
-      "width": 200,
-      "height": 160
-    },
-    "propertySchema": [
-      {
-        "key": "addressPrefix",
-        "label": "Address Prefix",
-        "type": "string",
-        "placeholder": "e.g. 10.0.1.0/24",
-        "defaultValue": "10.0.1.0/24"
-      },
-      {
-        "key": "privateEndpointNetworkPolicies",
-        "label": "Private Endpoint Network Policies",
-        "type": "select",
-        "options": [
-          {
-            "label": "Disabled",
-            "value": "Disabled"
-          },
-          {
-            "label": "Enabled",
-            "value": "Enabled"
-          }
-        ],
-        "defaultValue": "Disabled"
-      },
-      {
-        "key": "privateLinkServiceNetworkPolicies",
-        "label": "Private Link Service Network Policies",
-        "type": "select",
-        "options": [
-          {
-            "label": "Disabled",
-            "value": "Disabled"
-          },
-          {
-            "label": "Enabled",
-            "value": "Enabled"
-          }
-        ],
-        "defaultValue": "Enabled"
-      }
-    ]
   }
 ]
