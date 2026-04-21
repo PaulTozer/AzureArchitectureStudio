@@ -15,6 +15,8 @@ export interface DependencyStatus {
   fulfilled: boolean;
   source?: 'parent' | 'edge' | 'property';
   resolvedNodeId?: string;
+  /** When the resolved target's name does not match dep.requiredName. */
+  nameMismatch?: { actual: string; expected: string | string[] };
 }
 
 /** Return the registered typeKey of a node (resolved through alias map). */
@@ -29,6 +31,20 @@ function matchesType(node: AzureNode, targetType: string): boolean {
   // Resolve through registry: target may be a curated key while node uses a stencil key
   const def = getResourceType(tk);
   return def?.key === targetType;
+}
+
+/** Best-effort name extraction for a node (data.name → properties.name → label). */
+function nodeName(n: AzureNode): string {
+  const d = n.data as AzureNodeData & { label?: unknown };
+  if (typeof d.name === 'string' && d.name.trim() !== '') return d.name;
+  const propName = d.properties?.name;
+  if (typeof propName === 'string' && propName.trim() !== '') return propName;
+  if (typeof d.label === 'string') return d.label;
+  return '';
+}
+
+function nameMatches(actual: string, required: string | string[]): boolean {
+  return Array.isArray(required) ? required.includes(actual) : actual === required;
 }
 
 export function evaluateDependencies(
@@ -47,6 +63,8 @@ export function evaluateDependencies(
     let fulfilled = false;
     let source: DependencyStatus['source'] | undefined;
     let resolvedNodeId: string | undefined;
+
+    let nameMismatch: DependencyStatus['nameMismatch'];
 
     // 1. autoFromParent
     if (dep.autoFromParent && node.parentId) {
@@ -82,7 +100,19 @@ export function evaluateDependencies(
       }
     }
 
-    results.push({ dep, fulfilled, source, resolvedNodeId });
+    // 4. Validate required name on the resolved target (parent/edge only).
+    if (fulfilled && dep.requiredName && resolvedNodeId) {
+      const resolved = allNodes.find((n) => n.id === resolvedNodeId);
+      if (resolved) {
+        const actual = nodeName(resolved);
+        if (!nameMatches(actual, dep.requiredName)) {
+          fulfilled = false;
+          nameMismatch = { actual, expected: dep.requiredName };
+        }
+      }
+    }
+
+    results.push({ dep, fulfilled, source, resolvedNodeId, nameMismatch });
   }
 
   return results;

@@ -207,11 +207,23 @@ export default function NodeEditDrawer({
                 <MessageBar intent="warning" icon={<WarningRegular />} style={{ marginBottom: 8 }}>
                   <MessageBarBody>
                     <MessageBarTitle>Missing required dependencies</MessageBarTitle>
-                    {unmet.map((s) => (
-                      <div key={s.dep.key} style={{ fontSize: 12 }}>
-                        • {s.dep.label}{s.dep.hint ? ` — ${s.dep.hint}` : ''}
-                      </div>
-                    ))}
+                    {unmet.map((s) => {
+                      const expected = s.nameMismatch
+                        ? Array.isArray(s.nameMismatch.expected)
+                          ? s.nameMismatch.expected.join("' or '")
+                          : s.nameMismatch.expected
+                        : null;
+                      const reason = s.nameMismatch
+                        ? ` — name is '${s.nameMismatch.actual || '(empty)'}' but must be '${expected}'`
+                        : s.dep.hint
+                          ? ` — ${s.dep.hint}`
+                          : '';
+                      return (
+                        <div key={s.dep.key} style={{ fontSize: 12 }}>
+                          • {s.dep.label}{reason}
+                        </div>
+                      );
+                    })}
                   </MessageBarBody>
                 </MessageBar>
               )}
@@ -222,6 +234,11 @@ export default function NodeEditDrawer({
                     {s.fulfilled && s.source && (
                       <span style={{ color: 'var(--colorNeutralForeground3)', marginLeft: 4 }}>
                         (via {s.source})
+                      </span>
+                    )}
+                    {!s.fulfilled && s.nameMismatch && (
+                      <span style={{ color: 'var(--colorPaletteRedForeground1)', marginLeft: 4 }}>
+                        (wrong name: '{s.nameMismatch.actual || '(empty)'}')
                       </span>
                     )}
                   </li>

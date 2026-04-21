@@ -380,13 +380,29 @@ export default function DiagramPanel() {
     setDeleteConfirmOpen(false);
   }, [selectedNodeId, setNodes, setEdges, setSelectedNodeId]);
 
+  /** Topologically sort so every parent appears before its children
+   *  (React Flow v12 invariant; otherwise children snap to canvas origin). */
+  const topoSortNodes = (nds: AzureNode[]): AzureNode[] => {
+    const byId = new Map(nds.map((n) => [n.id, n] as const));
+    const visited = new Set<string>();
+    const ordered: AzureNode[] = [];
+    const visit = (n: AzureNode) => {
+      if (visited.has(n.id)) return;
+      if (n.parentId && byId.has(n.parentId)) visit(byId.get(n.parentId)!);
+      visited.add(n.id);
+      ordered.push(n);
+    };
+    for (const n of nds) visit(n);
+    return ordered;
+  };
+
   /** Move selected node to the END of the array — renders on top of siblings. */
   const handleBringToFront = useCallback(() => {
     if (!selectedNodeId) return;
     setNodes((nds) => {
       const target = nds.find((n) => n.id === selectedNodeId);
       if (!target) return nds;
-      return [...nds.filter((n) => n.id !== selectedNodeId), target];
+      return topoSortNodes([...nds.filter((n) => n.id !== selectedNodeId), target]);
     });
   }, [selectedNodeId, setNodes]);
 
@@ -396,7 +412,7 @@ export default function DiagramPanel() {
     setNodes((nds) => {
       const target = nds.find((n) => n.id === selectedNodeId);
       if (!target) return nds;
-      return [target, ...nds.filter((n) => n.id !== selectedNodeId)];
+      return topoSortNodes([target, ...nds.filter((n) => n.id !== selectedNodeId)]);
     });
   }, [selectedNodeId, setNodes]);
 
@@ -453,7 +469,7 @@ export default function DiagramPanel() {
         if (newParent.id === dragged.parentId) return nds;
 
         const newParentAbs = absPos.get(newParent.id)!;
-        return nds.map((n) => {
+        const reparented = nds.map((n) => {
           if (n.id !== dragged.id) return n;
           return {
             ...n,
@@ -472,6 +488,8 @@ export default function DiagramPanel() {
             })(),
           };
         });
+        // Maintain React Flow v12 invariant: parents must appear before children.
+        return topoSortNodes(reparented);
       });
     },
     [setNodes],

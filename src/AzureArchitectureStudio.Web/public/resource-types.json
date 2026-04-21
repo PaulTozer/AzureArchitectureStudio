@@ -6,8 +6,8 @@
     "apiVersion": "2023-07-01",
     "isGroup": true,
     "groupStyle": {
-      "width": 300,
-      "height": 250
+      "width": 700,
+      "height": 500
     },
     "propertySchema": [
       {
@@ -593,7 +593,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "Firewall must live in an AzureFirewallSubnet."
+        "requiredName": ["AzureFirewallSubnet", "AzureFirewallManagementSubnet"],
+        "hint": "Firewall must live in a subnet named exactly 'AzureFirewallSubnet'."
       },
       {
         "key": "publicIpRef",
@@ -616,7 +617,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "Place this Bastion inside an AzureBastionSubnet."
+        "requiredName": "AzureBastionSubnet",
+        "hint": "Place this Bastion inside a subnet named exactly 'AzureBastionSubnet'."
       },
       {
         "key": "publicIpRef",
@@ -2918,7 +2920,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "VPN Gateway requires a GatewaySubnet."
+        "requiredName": "GatewaySubnet",
+        "hint": "VPN Gateway must live in a subnet named exactly 'GatewaySubnet'."
       },
       {
         "key": "publicIpRef",

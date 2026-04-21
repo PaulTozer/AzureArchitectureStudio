@@ -43,6 +43,8 @@ export interface ResourceDependencyDef {
   autoFromParent?: boolean;
   /** Optional helper text shown when unfulfilled */
   hint?: string;
+  /** Optional exact name(s) the resolved target must have (case-sensitive). Used for Azure-mandated names like AzureBastionSubnet. */
+  requiredName?: string | string[];
 }
 
 export interface ResourceTypeDefinition {
@@ -86,6 +88,8 @@ const KEY_ALIASES: Record<string, string> = {
   'app-services': 'web-app',
   'app-service-plans': 'appservice-plan',
   firewalls: 'azure-firewall',
+  'virtual-network-gateways': 'vpn-gateway',
+  'resource-groups': 'resource-group',
 };
 
 /** Resolves any incoming key to its canonical registry key. */
