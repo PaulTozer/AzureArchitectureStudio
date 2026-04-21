@@ -9,14 +9,14 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { msalInstance } from './services';
 import { AppProvider, useAppContext } from './context/AppContext';
 import type { StencilModel, AzureServiceModel } from './models';
-import { loadResourceTypeRegistry } from './models';
+import { loadResourceTypeRegistry, isGroupType, getGroupStyle } from './models';
 import TopMenu from './components/TopMenu';
 import StencilPanel from './components/panels/StencilPanel';
 import DiagramPanel from './components/panels/DiagramPanel';
 import './App.css';
 
 function AppContent() {
-  const { setStencils, setAzureServices } = useAppContext();
+  const { setStencils, setAzureServices, setNodes } = useAppContext();
   const [loading, setLoading] = useState(true);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
 
@@ -34,13 +34,34 @@ function AppContent() {
 
         const servicesData: AzureServiceModel[] = await servicesRes.json();
         setAzureServices(servicesData);
+
+        // Migrate persisted nodes whose typeKey now resolves to a group definition
+        // but were stored as plain icons (e.g. resource-group before alias fix).
+        setNodes((prev) => {
+          let mutated = false;
+          const next = prev.map((n) => {
+            const tk = (n.data as { typeKey?: string }).typeKey;
+            if (!tk) return n;
+            if (n.type !== 'azureGroup' && isGroupType(tk)) {
+              mutated = true;
+              const dims = getGroupStyle(tk);
+              return {
+                ...n,
+                type: 'azureGroup',
+                ...(dims && !n.style ? { style: { width: dims.width, height: dims.height } } : {}),
+              };
+            }
+            return n;
+          });
+          return mutated ? next : prev;
+        });
       } catch (err) {
         console.error('Failed to load services:', err);
       } finally {
         setLoading(false);
       }
     })();
-  }, [setStencils, setAzureServices]);
+  }, [setStencils, setAzureServices, setNodes]);
 
   if (loading) {
     return (
