@@ -33,6 +33,7 @@ import {
   CodeRegular,
   DeleteRegular,
   SignOutRegular,
+  DocumentAddRegular,
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
@@ -50,7 +51,7 @@ import './TopMenu.css';
 export default function TopMenu() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
-  const { nodes, edges } = useAppContext();
+  const { nodes, edges, clearDiagram } = useAppContext();
   const toasterId = useId('toaster');
   const { dispatchToast } = useToastController(toasterId);
 
@@ -62,6 +63,16 @@ export default function TopMenu() {
   const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imgPreview, setImgPreview] = useState<string | null>(null);
+  const [newDialogOpen, setNewDialogOpen] = useState(false);
+
+  const handleNewDiagram = useCallback(() => {
+    if (nodes.length === 0 && edges.length === 0) {
+      // Nothing to lose — just clear (also wipes any persisted state)
+      clearDiagram();
+      return;
+    }
+    setNewDialogOpen(true);
+  }, [nodes.length, edges.length, clearDiagram]);
 
   const showToast = useCallback(
     (message: string, intent: 'success' | 'error' | 'warning' | 'info') => {
@@ -163,6 +174,14 @@ export default function TopMenu() {
       <Toaster toasterId={toasterId} position="top-end" />
       <div className="top-menu">
         <Toolbar size="small">
+          {/* New diagram */}
+          <ToolbarButton
+            icon={<DocumentAddRegular />}
+            onClick={handleNewDiagram}
+          >
+            New
+          </ToolbarButton>
+
           {/* Export menu */}
           <Menu>
             <MenuTrigger disableButtonEnhancement>
@@ -257,6 +276,36 @@ export default function TopMenu() {
           onClose={() => setSaveDrawerOpen(false)}
         />
       )}
+
+      {/* New diagram confirmation */}
+      <Dialog
+        open={newDialogOpen}
+        onOpenChange={(_, d) => setNewDialogOpen(d.open)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>New diagram</DialogTitle>
+            <DialogContent>
+              This will discard the current diagram. Any unsaved changes will be lost.
+              Continue?
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setNewDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={() => {
+                  clearDiagram();
+                  setNewDialogOpen(false);
+                }}
+              >
+                New diagram
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* Image preview dialog */}
       <Dialog

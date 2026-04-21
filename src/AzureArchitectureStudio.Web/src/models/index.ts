@@ -15,4 +15,4 @@ export {
   getDefaultProperties,
   getArmType,
 } from './resource-registry';
-export type { ResourceTypeDefinition, PropertyField } from './resource-registry';
+export type { ResourceTypeDefinition, PropertyField, ResourceDependencyDef } from './resource-registry';

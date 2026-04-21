@@ -18,7 +18,7 @@ export interface PropertyField {
   required?: boolean;
   /** Schema for items in a simple string array */
   itemSchema?: PropertyField;
-  visibleWhen?: { field: string; value: string };
+  visibleWhen?: { field: string; value: string | string[] };
   /** Child fields for 'object' and 'object-array' types */
   children?: PropertyField[];
 }
@@ -27,6 +27,22 @@ export interface ArmMappingDef {
   skuProperty?: string;
   propertyMappings?: Record<string, string>;
   parameters?: { name: string; type: string; description: string }[];
+}
+
+/** Declares an external resource this type depends on (e.g. Bastion needs a Public IP and a subnet). */
+export interface ResourceDependencyDef {
+  /** Property key on this node where the chosen target resource id is stored */
+  key: string;
+  /** Display label shown in the dependency panel */
+  label: string;
+  /** Target resource type key (registry key) the dependency resolves to */
+  targetType: string;
+  /** Whether the dependency is required for the resource to be valid */
+  required?: boolean;
+  /** When true, the parent group's id is auto-bound if the parent matches targetType */
+  autoFromParent?: boolean;
+  /** Optional helper text shown when unfulfilled */
+  hint?: string;
 }
 
 export interface ResourceTypeDefinition {
@@ -40,6 +56,7 @@ export interface ResourceTypeDefinition {
   armDefaults?: Record<string, unknown>;
   propertySchema: PropertyField[];
   armMapping?: ArmMappingDef;
+  dependencies?: ResourceDependencyDef[];
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +67,33 @@ let registry: Map<string, ResourceTypeDefinition> = new Map();
 
 /** Maps service-key → ARM resource type (e.g. "network-interfaces" → "Microsoft.Network/networkInterfaces") */
 let armTypeMap: Record<string, string> = {};
+
+/** Aliases mapping stencil/service keys to curated registry keys.
+ *  Use this when the azure-services.json key differs from the resource-types.json key
+ *  (e.g. "bastions" → "azure-bastions"). */
+const KEY_ALIASES: Record<string, string> = {
+  bastions: 'azure-bastions',
+  'bastion-hosts': 'azure-bastions',
+  'virtual-machines': 'virtual-machine',
+  'storage-accounts': 'storage-account',
+  'sql-servers': 'sql-server',
+  'sql-databases': 'sql-database',
+  'public-ip-addresses': 'public-ip',
+  'application-gateways': 'app-gateway',
+  'kubernetes-services': 'aks-cluster',
+  'api-management-services': 'apim',
+  'function-apps': 'function-app',
+  'app-services': 'web-app',
+  'app-service-plans': 'appservice-plan',
+  firewalls: 'azure-firewall',
+};
+
+/** Resolves any incoming key to its canonical registry key. */
+function resolveKey(key: string): string {
+  // Strip any --category dedup suffix from azure-services.json
+  const base = key.replace(/--.*$/, '');
+  return KEY_ALIASES[base] ?? base;
+}
 
 /** Dynamically-resolved definitions (fetched from ARM schemas at runtime) */
 const dynamicRegistry: Map<string, ResourceTypeDefinition> = new Map();
@@ -78,7 +122,8 @@ export async function loadResourceTypeRegistry(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function getResourceType(key: string): ResourceTypeDefinition | undefined {
-  return registry.get(key) ?? dynamicRegistry.get(key);
+  const k = resolveKey(key);
+  return registry.get(k) ?? dynamicRegistry.get(k);
 }
 
 export function getAllResourceTypes(): ResourceTypeDefinition[] {
@@ -86,25 +131,27 @@ export function getAllResourceTypes(): ResourceTypeDefinition[] {
 }
 
 export function isGroupType(key: string): boolean {
-  return registry.get(key)?.isGroup === true;
+  return registry.get(resolveKey(key))?.isGroup === true;
 }
 
 export function getGroupStyle(key: string): { width: number; height: number } | undefined {
-  return registry.get(key)?.groupStyle;
+  return registry.get(resolveKey(key))?.groupStyle;
 }
 
 export function getGroupVariant(key: string): string | undefined {
   // Subnet nodes are generated from VNet properties, not from the registry
   if (key === 'subnet') return 'subnet';
-  return registry.get(key)?.groupVariant;
+  return registry.get(resolveKey(key))?.groupVariant;
 }
 
 export function getDisplayName(key: string): string {
-  return registry.get(key)?.displayName ?? dynamicRegistry.get(key)?.displayName ?? key;
+  const k = resolveKey(key);
+  return registry.get(k)?.displayName ?? dynamicRegistry.get(k)?.displayName ?? key;
 }
 
 export function getDefaultProperties(key: string): Record<string, unknown> {
-  const def = registry.get(key) ?? dynamicRegistry.get(key);
+  const k = resolveKey(key);
+  const def = registry.get(k) ?? dynamicRegistry.get(k);
   if (!def) return {};
   const defaults: Record<string, unknown> = {};
   for (const field of def.propertySchema) {
@@ -127,30 +174,31 @@ export async function getResourceTypeAsync(
   key: string,
   displayName?: string,
 ): Promise<ResourceTypeDefinition | undefined> {
+  const k = resolveKey(key);
   // 1. Curated definition wins
-  const curated = registry.get(key);
+  const curated = registry.get(k);
   if (curated) return curated;
 
   // 2. Previously resolved dynamic definition
-  const cached = dynamicRegistry.get(key);
+  const cached = dynamicRegistry.get(k);
   if (cached) return cached;
 
   // 3. Try to resolve from ARM schema
-  const armType = armTypeMap[key];
+  const armType = armTypeMap[k] ?? armTypeMap[key];
   if (!armType) return undefined;
 
   const propertySchema = await fetchArmPropertySchema(armType);
   const apiVersion = getConfiguredApiVersion(armType) ?? 'unknown';
 
   const def: ResourceTypeDefinition = {
-    key,
-    displayName: displayName ?? humanizeKey(key),
+    key: k,
+    displayName: displayName ?? humanizeKey(k),
     armType,
     apiVersion,
     propertySchema,
   };
 
-  dynamicRegistry.set(key, def);
+  dynamicRegistry.set(k, def);
   return def;
 }
 

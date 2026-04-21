@@ -13,6 +13,7 @@ import {
 import { AddRegular, DeleteRegular, ChevronDownRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import type { PropertyField } from '../../models/resource-registry';
+import { dbg } from '../../utils/debug';
 
 interface SchemaFormProps {
   schema: PropertyField[];
@@ -31,7 +32,9 @@ export default function SchemaForm({ schema, properties, onChange }: SchemaFormP
         // Conditional visibility
         if (field.visibleWhen) {
           const dep = properties[field.visibleWhen.field];
-          if (dep !== field.visibleWhen.value) return null;
+          const expected = field.visibleWhen.value;
+          const match = Array.isArray(expected) ? expected.includes(dep as string) : dep === expected;
+          if (!match) return null;
         }
 
         return (
@@ -59,12 +62,20 @@ function SchemaField({ field, value, onChange }: SchemaFieldProps) {
   switch (field.type) {
     case 'string':
     case 'password':
+      if (field.key === 'name' || field.key === 'addressPrefix') {
+        dbg('SchemaField:render', { key: field.key, value });
+      }
       return (
         <Field label={field.label} required={field.required}>
           <Input
             type={field.type === 'password' ? 'password' : 'text'}
             value={(value as string) ?? ''}
-            onChange={(_, d) => onChange(field.key, d.value)}
+            onChange={(_, d) => {
+              if (field.key === 'name' || field.key === 'addressPrefix') {
+                dbg('SchemaField:onChange', { key: field.key, typed: d.value, prevValue: value });
+              }
+              onChange(field.key, d.value);
+            }}
             size="small"
             placeholder={field.placeholder}
           />
@@ -300,6 +311,14 @@ function ObjectArrayField({ field, value, onChange }: ObjectArrayFieldProps) {
   const handleItemChange = (index: number, childKey: string, childValue: unknown) => {
     const updated = [...items];
     updated[index] = { ...updated[index], [childKey]: childValue };
+    dbg('ObjectArrayField:handleItemChange', {
+      arrayKey: field.key,
+      index,
+      childKey,
+      childValue,
+      newItem: updated[index],
+      newArray: updated,
+    });
     onChange(field.key, updated);
   };
 

@@ -9,13 +9,19 @@ import {
   Switch,
   Button,
   Spinner,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
 } from '@fluentui/react-components';
-import { DismissRegular } from '@fluentui/react-icons';
+import { DismissRegular, WarningRegular } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
 import type { AzureNode, AzureNodeData } from '../../models';
 import { getResourceType, getResourceTypeAsync, getDisplayName } from '../../models';
 import type { ResourceTypeDefinition } from '../../models';
+import { evaluateDependencies } from '../../hooks/useDependencies';
+import { parseSubnetNodeId } from '../../hooks/useSubnetSync';
 import SchemaForm from '../forms/SchemaForm';
+import { dbg } from '../../utils/debug';
 
 interface NodeEditDrawerProps {
   node: AzureNode;
@@ -28,8 +34,35 @@ export default function NodeEditDrawer({
   open,
   onClose,
 }: NodeEditDrawerProps) {
-  const { updateNodeData } = useAppContext();
+  const { updateNodeData, nodes, edges } = useAppContext();
   const data = node.data as AzureNodeData;
+
+  // If this node is a subnet child of a VNet, edits to its name and
+  // address prefix must be routed back into the VNet's properties.subnets
+  // array (the source of truth) rather than the child's own data — the
+  // child is regenerated from the parent on every render.
+  const subnetRef = parseSubnetNodeId(node.id);
+  const parentVnet = subnetRef ? nodes.find((n) => n.id === subnetRef.vnetId) : undefined;
+  const parentVnetData = parentVnet?.data as AzureNodeData | undefined;
+  const parentSubnets = (parentVnetData?.properties?.subnets as Array<Record<string, unknown>> | undefined) ?? [];
+  const subnetEntry = subnetRef ? parentSubnets[subnetRef.index] : undefined;
+
+  // Display values: prefer the parent's subnet entry over the child's
+  // local data so we always show the source-of-truth value.
+  const displayName = (subnetEntry?.name as string | undefined) ?? data.name;
+  const displayAddressPrefix = (subnetEntry?.addressPrefix as string | undefined)
+    ?? (data.properties?.addressPrefix as string | undefined) ?? '';
+
+  const writeSubnetField = (field: 'name' | 'addressPrefix', value: string) => {
+    if (!subnetRef || !parentVnet || !parentVnetData) return;
+    const next = parentSubnets.map((s, i) =>
+      i === subnetRef.index ? { ...s, [field]: value } : s,
+    );
+    dbg('NodeEditDrawer:writeSubnetField', { vnetId: subnetRef.vnetId, index: subnetRef.index, field, value });
+    updateNodeData(subnetRef.vnetId, {
+      properties: { ...parentVnetData.properties, subnets: next },
+    });
+  };
 
   // Try sync first; if missing, resolve async
   const [resourceDef, setResourceDef] = useState<ResourceTypeDefinition | undefined>(
@@ -58,10 +91,36 @@ export default function NodeEditDrawer({
   }, [data.typeKey, data.label]);
 
   const handleChange = (field: keyof AzureNodeData, value: unknown) => {
+    dbg('NodeEditDrawer:handleChange', {
+      nodeId: node.id,
+      typeKey: data.typeKey,
+      field,
+      value,
+      prevValue: data[field],
+      isSubnetChild: !!subnetRef,
+    });
+    // Subnet children: route the name into the VNet's subnets array.
+    if (subnetRef && field === 'name') {
+      writeSubnetField('name', String(value ?? ''));
+      return;
+    }
     updateNodeData(node.id, { [field]: value } as Partial<AzureNodeData>);
   };
 
   const handlePropertyChange = (key: string, value: unknown) => {
+    if (key === 'subnets') {
+      dbg('NodeEditDrawer:handlePropertyChange', {
+        nodeId: node.id,
+        key,
+        value,
+        prevValue: data.properties?.[key],
+      });
+    }
+    // Subnet children: route addressPrefix changes back into the VNet props.
+    if (subnetRef && key === 'addressPrefix') {
+      writeSubnetField('addressPrefix', String(value ?? ''));
+      return;
+    }
     updateNodeData(node.id, {
       properties: { ...data.properties, [key]: value },
     });
@@ -86,7 +145,7 @@ export default function NodeEditDrawer({
         {/* Common fields: Name and Location */}
         <Field label="Name" required>
           <Input
-            value={data.name}
+            value={displayName}
             onChange={(_, d) => handleChange('name', d.value)}
             size="small"
           />
@@ -123,7 +182,11 @@ export default function NodeEditDrawer({
         ) : resourceDef && resourceDef.propertySchema.length > 0 ? (
           <SchemaForm
             schema={resourceDef.propertySchema}
-            properties={data.properties}
+            properties={
+              subnetRef
+                ? { ...data.properties, addressPrefix: displayAddressPrefix }
+                : data.properties
+            }
             onChange={handlePropertyChange}
           />
         ) : (
@@ -131,6 +194,42 @@ export default function NodeEditDrawer({
             No configurable properties available for this resource type.
           </p>
         )}
+
+        {/* Dependencies section */}
+        {(() => {
+          const statuses = evaluateDependencies(node, nodes, edges);
+          if (statuses.length === 0) return null;
+          const unmet = statuses.filter((s) => s.dep.required && !s.fulfilled);
+          return (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Dependencies</div>
+              {unmet.length > 0 && (
+                <MessageBar intent="warning" icon={<WarningRegular />} style={{ marginBottom: 8 }}>
+                  <MessageBarBody>
+                    <MessageBarTitle>Missing required dependencies</MessageBarTitle>
+                    {unmet.map((s) => (
+                      <div key={s.dep.key} style={{ fontSize: 12 }}>
+                        • {s.dep.label}{s.dep.hint ? ` — ${s.dep.hint}` : ''}
+                      </div>
+                    ))}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+                {statuses.map((s) => (
+                  <li key={s.dep.key} style={{ color: s.fulfilled ? 'var(--colorPaletteGreenForeground1)' : 'var(--colorNeutralForeground2)' }}>
+                    {s.fulfilled ? '✓' : '○'} {s.dep.label}
+                    {s.fulfilled && s.source && (
+                      <span style={{ color: 'var(--colorNeutralForeground3)', marginLeft: 4 }}>
+                        (via {s.source})
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
 
         {/* Show ARM type for reference */}
         {resourceDef && (

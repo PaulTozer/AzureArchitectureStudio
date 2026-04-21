@@ -9,10 +9,15 @@
 import { useEffect, useRef } from 'react';
 import type { AzureNode, AzureNodeData, BindingCorner } from '../models';
 
-/** Which resource typeKeys can be bound to which parent group typeKeys */
+/** Which resource typeKeys can be bound to which parent group typeKeys.
+ *  Include both the resource-types.json key and the azure-services.json key
+ *  so binding works regardless of which stencil the user dragged from.
+ */
 export const BINDABLE_ASSOCIATIONS: Record<string, string[]> = {
-  nsg: ['subnet', 'virtual-networks'],
+  'nsg': ['subnet', 'virtual-networks'],
+  'network-security-groups': ['subnet', 'virtual-networks'],
   'route-table': ['subnet'],
+  'route-tables': ['subnet'],
 };
 
 const PADDING = 8;
@@ -22,10 +27,11 @@ const DEFAULT_NODE_HEIGHT = 80;
 
 /**
  * Returns true if the given child typeKey can be bound inside the given
- * parent typeKey.
+ * parent typeKey.  Also strips any `--category` dedup suffix before matching.
  */
 export function canBind(childTypeKey: string, parentTypeKey: string): boolean {
-  const allowed = BINDABLE_ASSOCIATIONS[childTypeKey];
+  const base = childTypeKey.replace(/--.*$/, '');
+  const allowed = BINDABLE_ASSOCIATIONS[childTypeKey] ?? BINDABLE_ASSOCIATIONS[base];
   return !!allowed && allowed.includes(parentTypeKey);
 }
 
@@ -37,7 +43,8 @@ export function nextCorner(current: BindingCorner): BindingCorner {
 }
 
 /**
- * Compute the position for a bound node in a given corner of its parent.
+ * Compute the position for a bound node so its center sits on the corner of
+ * the parent group (Microsoft-style: icon hangs off the boundary).
  */
 export function cornerPosition(
   corner: BindingCorner,
@@ -46,16 +53,18 @@ export function cornerPosition(
   nodeWidth: number = DEFAULT_NODE_WIDTH,
   nodeHeight: number = DEFAULT_NODE_HEIGHT,
 ): { x: number; y: number } {
+  const halfW = nodeWidth / 2;
+  const halfH = nodeHeight / 2;
   switch (corner) {
     case 'top-left':
-      return { x: PADDING, y: HEADER_HEIGHT + PADDING };
+      return { x: -halfW, y: -halfH };
     case 'top-right':
-      return { x: parentWidth - nodeWidth - PADDING, y: HEADER_HEIGHT + PADDING };
+      return { x: parentWidth - halfW, y: -halfH };
     case 'bottom-right':
-      return { x: parentWidth - nodeWidth - PADDING, y: parentHeight - nodeHeight - PADDING };
+      return { x: parentWidth - halfW, y: parentHeight - halfH };
     case 'bottom-left':
     default:
-      return { x: PADDING, y: parentHeight - nodeHeight - PADDING };
+      return { x: -halfW, y: parentHeight - halfH };
   }
 }
 
@@ -84,7 +93,7 @@ export function useBindingSync(
     // Check if any parent that has bound children changed size
     const boundChildren = nodes.filter((n) => {
       const d = n.data as AzureNodeData;
-      return d.binding && n.parentId;
+      return d.binding && d.binding.corner && n.parentId;
     });
 
     if (boundChildren.length === 0) return;
@@ -106,13 +115,13 @@ export function useBindingSync(
     setNodes((cur) =>
       cur.map((n) => {
         const d = n.data as AzureNodeData;
-        if (!d.binding || !n.parentId) return n;
+        if (!d.binding || !d.binding.corner || !n.parentId) return n;
 
         const pd = parentDims.get(n.parentId);
-        if (!pd) return n;
+        if (!pd || pd.w <= 0 || pd.h <= 0) return n;
 
-        const nodeW = n.measured?.width ?? n.width ?? DEFAULT_NODE_WIDTH;
-        const nodeH = n.measured?.height ?? n.height ?? DEFAULT_NODE_HEIGHT;
+        const nodeW = 32;
+        const nodeH = 32;
         const pos = cornerPosition(d.binding.corner, pd.w, pd.h, nodeW, nodeH);
 
         // Only update if position actually differs (avoid loops)

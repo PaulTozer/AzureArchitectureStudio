@@ -50,4 +50,31 @@
   height: 8px;
   background: #0078d4;
   border: 2px solid #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+  pointer-events: all;
+}
+
+.azure-node:hover .react-flow__handle,
+.azure-node.selected .react-flow__handle {
+  opacity: 1;
+}
+
+/* Bound (pinned-to-corner) compact appearance */
+.azure-node--bound {
+  padding: 0;
+  border: none;
+  background: transparent;
+  min-width: 0;
+  width: 32px;
+  height: 32px;
+}
+.azure-node--bound .azure-node-icon {
+  width: 28px;
+  height: 28px;
+}
+.azure-node--bound.selected {
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.6);
+  border-radius: 4px;
 }

@@ -26,7 +26,7 @@ export interface AzureNodeData extends Record<string, unknown> {
   // Resource-specific properties stored as a generic bag
   properties: Record<string, unknown>;
   /** When set, this node is anchored to a corner of its parent group */
-  binding?: { corner: BindingCorner };
+  binding?: { corner?: BindingCorner };
 }
 
 // The diagram graph DTO for save/load (matches C# DiagramGraph)

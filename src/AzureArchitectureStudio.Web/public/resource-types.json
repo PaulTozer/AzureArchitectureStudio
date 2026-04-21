@@ -382,7 +382,17 @@
           "description": "Admin password for the VM."
         }
       ]
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Subnet (NIC attachment)",
+        "targetType": "subnet",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Place the VM inside a subnet, or attach a NIC."
+      }
+    ]
   },
   {
     "key": "storage-account",
@@ -575,20 +585,58 @@
         "skuTier": "properties.sku.tier",
         "threatIntelMode": "properties.threatIntelMode"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "AzureFirewallSubnet",
+        "targetType": "subnet",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Firewall must live in an AzureFirewallSubnet."
+      },
+      {
+        "key": "publicIpRef",
+        "label": "Public IP Address",
+        "targetType": "public-ip",
+        "required": true,
+        "hint": "Connect a Public IP via an edge."
+      }
+    ]
   },
   {
     "key": "azure-bastions",
     "displayName": "Azure Bastion",
     "armType": "Microsoft.Network/bastionHosts",
     "apiVersion": "2023-04-01",
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Bastion subnet (AzureBastionSubnet)",
+        "targetType": "subnet",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Place this Bastion inside an AzureBastionSubnet."
+      },
+      {
+        "key": "publicIpRef",
+        "label": "Public IP Address (Standard SKU)",
+        "targetType": "public-ip",
+        "required": true,
+        "hint": "Connect this Bastion to a Public IP via an edge."
+      }
+    ],
     "propertySchema": [
       {
-        "key": "sku",
-        "label": "SKU",
+        "key": "tier",
+        "label": "Tier",
         "type": "select",
         "defaultValue": "Basic",
         "options": [
+          {
+            "label": "Developer",
+            "value": "Developer"
+          },
           {
             "label": "Basic",
             "value": "Basic"
@@ -596,46 +644,172 @@
           {
             "label": "Standard",
             "value": "Standard"
+          },
+          {
+            "label": "Premium",
+            "value": "Premium"
           }
         ]
       },
       {
+        "key": "scaleUnits",
+        "label": "Instance count (scale units)",
+        "type": "number",
+        "defaultValue": 2,
+        "visibleWhen": {
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
+        "key": "availabilityZones",
+        "label": "Availability zones",
+        "type": "select",
+        "defaultValue": "1,2,3",
+        "options": [
+          {
+            "label": "Zones 1, 2, 3",
+            "value": "1,2,3"
+          },
+          {
+            "label": "Zone 1",
+            "value": "1"
+          },
+          {
+            "label": "Zone 2",
+            "value": "2"
+          },
+          {
+            "label": "Zone 3",
+            "value": "3"
+          },
+          {
+            "label": "No zone preference",
+            "value": ""
+          }
+        ],
+        "visibleWhen": {
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
         "key": "enableTunneling",
-        "label": "Native Client Support (Tunneling)",
+        "label": "Native client support (tunneling)",
         "type": "boolean",
         "defaultValue": false,
         "visibleWhen": {
-          "field": "sku",
-          "value": "Standard"
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
         }
       },
       {
         "key": "enableFileCopy",
-        "label": "File Copy",
+        "label": "File copy",
         "type": "boolean",
         "defaultValue": false,
         "visibleWhen": {
-          "field": "sku",
-          "value": "Standard"
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
         }
       },
       {
-        "key": "scaleUnits",
-        "label": "Instance Count (Scale Units)",
-        "type": "number",
-        "defaultValue": 2,
+        "key": "enableIpConnect",
+        "label": "IP-based connection",
+        "type": "boolean",
+        "defaultValue": false,
         "visibleWhen": {
-          "field": "sku",
-          "value": "Standard"
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
+        "key": "enableShareableLink",
+        "label": "Shareable link",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": {
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
+        "key": "enableKerberos",
+        "label": "Kerberos authentication",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": {
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
+        "key": "disableCopyPaste",
+        "label": "Disable copy/paste",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": {
+          "field": "tier",
+          "value": [
+            "Standard",
+            "Premium"
+          ]
+        }
+      },
+      {
+        "key": "enableSessionRecording",
+        "label": "Session recording",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": {
+          "field": "tier",
+          "value": "Premium"
+        }
+      },
+      {
+        "key": "enablePrivateOnly",
+        "label": "Private-only deployment",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": {
+          "field": "tier",
+          "value": "Premium"
         }
       }
     ],
     "armMapping": {
-      "skuProperty": "sku",
+      "skuProperty": "tier",
       "propertyMappings": {
+        "scaleUnits": "properties.scaleUnits",
         "enableTunneling": "properties.enableTunneling",
         "enableFileCopy": "properties.enableFileCopy",
-        "scaleUnits": "properties.scaleUnits"
+        "enableIpConnect": "properties.enableIpConnect",
+        "enableShareableLink": "properties.enableShareableLink",
+        "enableKerberos": "properties.enableKerberos",
+        "disableCopyPaste": "properties.disableCopyPaste",
+        "enableSessionRecording": "properties.enableSessionRecording",
+        "enablePrivateOnly": "properties.enablePrivateOnlyDeployment"
       }
     }
   },
@@ -915,7 +1089,17 @@
         "zoneRedundant": "properties.zoneRedundant",
         "backupRedundancy": "properties.requestedBackupStorageRedundancy"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "serverRef",
+        "label": "SQL Server",
+        "targetType": "sql-server",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Database must live on a SQL Server."
+      }
+    ]
   },
   {
     "key": "appservice-plan",
@@ -1181,7 +1365,17 @@
         "http20Enabled": "properties.siteConfig.http20Enabled",
         "ftpsState": "properties.siteConfig.ftpsState"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "planRef",
+        "label": "App Service Plan",
+        "targetType": "appservice-plan",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Web App must run on an App Service Plan."
+      }
+    ]
   },
   {
     "key": "function-app",
@@ -1293,7 +1487,24 @@
       "propertyMappings": {
         "httpsOnly": "properties.httpsOnly"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "planRef",
+        "label": "App Service Plan",
+        "targetType": "appservice-plan",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Function App needs a hosting plan."
+      },
+      {
+        "key": "storageRef",
+        "label": "Storage Account",
+        "targetType": "storage-account",
+        "required": true,
+        "hint": "Function App requires a Storage Account."
+      }
+    ]
   },
   {
     "key": "aks-cluster",
@@ -1438,7 +1649,24 @@
         "networkPlugin": "properties.networkProfile.networkPlugin",
         "enableRBAC": "properties.enableRBAC"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Subnet (CNI integration)",
+        "targetType": "subnet",
+        "required": false,
+        "autoFromParent": true,
+        "hint": "Required when using Azure CNI."
+      },
+      {
+        "key": "logsRef",
+        "label": "Log Analytics workspace",
+        "targetType": "log-analytics",
+        "required": false,
+        "hint": "Required if Container Insights is enabled."
+      }
+    ]
   },
   {
     "key": "apim",
@@ -1529,7 +1757,17 @@
         "publisherName": "properties.publisherName",
         "virtualNetworkType": "properties.virtualNetworkType"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Subnet (VNet integration)",
+        "targetType": "subnet",
+        "required": false,
+        "autoFromParent": true,
+        "hint": "Required for internal VNet mode."
+      }
+    ]
   },
   {
     "key": "app-gateway",
@@ -1610,7 +1848,24 @@
         "tier": "properties.sku.tier",
         "enableHttp2": "properties.enableHttp2"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Application Gateway subnet",
+        "targetType": "subnet",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "Application Gateway needs a dedicated subnet."
+      },
+      {
+        "key": "publicIpRef",
+        "label": "Public IP Address",
+        "targetType": "public-ip",
+        "required": false,
+        "hint": "Optional for public-facing gateway."
+      }
+    ]
   },
   {
     "key": "nsg",
@@ -1635,7 +1890,17 @@
         ]
       }
     ],
-    "armMapping": {}
+    "armMapping": {},
+    "dependencies": [
+      {
+        "key": "attachedTo",
+        "label": "Subnet or Network Interface",
+        "targetType": "subnet",
+        "required": false,
+        "autoFromParent": true,
+        "hint": "NSGs are usually associated with a subnet."
+      }
+    ]
   },
   {
     "key": "load-balancer",
@@ -1710,7 +1975,16 @@
     ],
     "armMapping": {
       "skuProperty": "sku"
-    }
+    },
+    "dependencies": [
+      {
+        "key": "frontendRef",
+        "label": "Frontend (Public IP or Subnet)",
+        "targetType": "public-ip",
+        "required": true,
+        "hint": "Public LB needs a Public IP; internal LB needs a subnet."
+      }
+    ]
   },
   {
     "key": "cosmos-db",
@@ -2428,7 +2702,16 @@
         "disableIpMasking": "properties.DisableIpMasking",
         "publicNetworkAccess": "properties.publicNetworkAccessForIngestion"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "workspaceRef",
+        "label": "Log Analytics workspace",
+        "targetType": "log-analytics",
+        "required": true,
+        "hint": "Workspace-based App Insights needs a Log Analytics workspace."
+      }
+    ]
   },
   {
     "key": "dns-zone",
@@ -2513,7 +2796,16 @@
       "propertyMappings": {
         "originResponseTimeoutSeconds": "properties.originResponseTimeoutSeconds"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "originRef",
+        "label": "Origin (Web App / Static Web App / Storage)",
+        "targetType": "web-app",
+        "required": true,
+        "hint": "Front Door must point to at least one origin."
+      }
+    ]
   },
   {
     "key": "vpn-gateway",
@@ -2618,7 +2910,24 @@
         "vpnType": "properties.vpnType",
         "enableBgp": "properties.enableBgp"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "GatewaySubnet",
+        "targetType": "subnet",
+        "required": true,
+        "autoFromParent": true,
+        "hint": "VPN Gateway requires a GatewaySubnet."
+      },
+      {
+        "key": "publicIpRef",
+        "label": "Public IP Address",
+        "targetType": "public-ip",
+        "required": true,
+        "hint": "Connect a Public IP via an edge."
+      }
+    ]
   },
   {
     "key": "container-apps",
@@ -2751,7 +3060,31 @@
         "targetPort": "properties.configuration.ingress.targetPort",
         "transport": "properties.configuration.ingress.transport"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "subnetRef",
+        "label": "Subnet (Container Apps environment)",
+        "targetType": "subnet",
+        "required": false,
+        "autoFromParent": true,
+        "hint": "Required for VNet-integrated environments."
+      },
+      {
+        "key": "logsRef",
+        "label": "Log Analytics workspace",
+        "targetType": "log-analytics",
+        "required": true,
+        "hint": "Container Apps environment needs a Log Analytics workspace."
+      },
+      {
+        "key": "registryRef",
+        "label": "Container Registry",
+        "targetType": "container-registry",
+        "required": false,
+        "hint": "Recommended for private images."
+      }
+    ]
   },
   {
     "key": "static-web-app",
@@ -2816,7 +3149,16 @@
         "apiLocation": "properties.buildProperties.apiLocation",
         "outputLocation": "properties.buildProperties.outputLocation"
       }
-    }
+    },
+    "dependencies": [
+      {
+        "key": "apiRef",
+        "label": "Backend API (optional)",
+        "targetType": "function-app",
+        "required": false,
+        "hint": "Optionally link a Function App as the backend API."
+      }
+    ]
   },
   {
     "key": "signalr",

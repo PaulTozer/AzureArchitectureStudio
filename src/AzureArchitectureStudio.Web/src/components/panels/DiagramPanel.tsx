@@ -14,6 +14,7 @@ import {
   type NodeChange,
   type EdgeChange,
   BackgroundVariant,
+  ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -26,7 +27,14 @@ import {
   DialogContent,
   DialogActions,
 } from '@fluentui/react-components';
-import { EditRegular, DeleteRegular, PinRegular, PinOffRegular } from '@fluentui/react-icons';
+import {
+  EditRegular,
+  DeleteRegular,
+  PinRegular,
+  PinOffRegular,
+  ArrowUpRegular,
+  ArrowDownRegular,
+} from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
 import {
   type AzureNodeData,
@@ -41,7 +49,8 @@ import AzureNodeComponent from '../nodes/AzureNode';
 import AzureGroupComponent from '../nodes/AzureGroup';
 import NodeEditDrawer from '../drawers/NodeEditDrawer';
 import { useSubnetSync } from '../../hooks/useSubnetSync';
-import { useBindingSync, canBind, cornerPosition, nextCorner } from '../../hooks/useBindingSync';
+import { useBindingSync, cornerPosition, nextCorner } from '../../hooks/useBindingSync';
+import { useDependencyValidationSync } from '../../hooks/useDependencyValidationSync';
 import type { AzureNodeData as AzureNodeDataType, BindingCorner } from '../../models';
 import './DiagramPanel.css';
 
@@ -75,6 +84,9 @@ export default function DiagramPanel() {
 
   // Keep bound nodes anchored to their corner on parent resize
   useBindingSync(nodes, setNodes);
+
+  // Recompute node validity from required-dependency fulfilment
+  useDependencyValidationSync(nodes, edges, setNodes);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -207,7 +219,14 @@ export default function DiagramPanel() {
           isValid: true,
           properties: defaultProps,
         } satisfies AzureNodeData,
-        ...(parentGroup ? { parentId: parentGroup.id, extent: 'parent' as const } : {}),
+        ...(parentGroup
+          ? {
+              parentId: parentGroup.id,
+              // Group children stay constrained; leaf nodes can be dragged
+              // out to be re-parented into another group.
+              ...(isGroup ? { extent: 'parent' as const } : {}),
+            }
+          : {}),
         ...(isGroup && groupDims
           ? { style: { width: groupDims.width, height: groupDims.height } }
           : {}),
@@ -219,10 +238,45 @@ export default function DiagramPanel() {
   );
 
   const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: { id: string }) => {
+    (event: React.MouseEvent, node: { id: string }) => {
+      // Alt/Option-click — cycle selection through nodes stacked at this point
+      // (useful when a leaf icon is hidden underneath another).
+      if (event.altKey && reactFlowInstance.current) {
+        const flowPos = reactFlowInstance.current.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
+        // Build absolute positions
+        const absPos = new Map<string, { x: number; y: number }>();
+        for (const n of nodes) {
+          const px = n.parentId ? absPos.get(n.parentId) : undefined;
+          absPos.set(n.id, {
+            x: n.position.x + (px?.x ?? 0),
+            y: n.position.y + (px?.y ?? 0),
+          });
+        }
+        const hits = nodes.filter((n) => {
+          if (n.type === 'azureGroup') return false;
+          const ap = absPos.get(n.id)!;
+          const w = n.measured?.width ?? (n.width as number) ?? 60;
+          const h = n.measured?.height ?? (n.height as number) ?? 60;
+          return (
+            flowPos.x >= ap.x &&
+            flowPos.x <= ap.x + w &&
+            flowPos.y >= ap.y &&
+            flowPos.y <= ap.y + h
+          );
+        });
+        if (hits.length > 0) {
+          const idx = hits.findIndex((n) => n.id === selectedNodeId);
+          const next = hits[(idx + 1) % hits.length];
+          setSelectedNodeId(next.id);
+          return;
+        }
+      }
       setSelectedNodeId(node.id);
     },
-    [setSelectedNodeId]
+    [nodes, selectedNodeId, setSelectedNodeId],
   );
 
   const onPaneClick = useCallback(() => {
@@ -238,13 +292,31 @@ export default function DiagramPanel() {
     : undefined;
   const parentData = parentNode?.data as AzureNodeDataType | undefined;
   const showBind =
-    selectedData &&
-    parentData &&
+    !!selectedData &&
+    !!parentData &&
     !selectedData.binding &&
-    canBind(selectedData.typeKey, parentData.typeKey);
-  const showUnbind = !!selectedData?.binding;
+    selectedNode?.type !== 'azureGroup'; // any child-of-group can be bound
+  const isBound = !!selectedData?.binding;
+  const showPin = isBound && !selectedData?.binding?.corner;
+  const showCorner = isBound && !!selectedData?.binding?.corner;
+  const showUnbind = isBound;
 
-  const handleBind = useCallback(
+  /** Bind = associate with parent (compact icon), no corner placement */
+  const handleBind = useCallback(() => {
+    if (!selectedNodeId || !parentNode) return;
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (n.id !== selectedNodeId) return n;
+        return {
+          ...n,
+          data: { ...n.data, binding: {} },
+        };
+      }),
+    );
+  }, [selectedNodeId, parentNode, setNodes]);
+
+  /** Pin to corner = move to a specific corner (and switch into corner-anchored mode) */
+  const handlePinToCorner = useCallback(
     (corner: BindingCorner = 'bottom-left') => {
       if (!selectedNodeId || !parentNode) return;
       const parentW =
@@ -260,11 +332,13 @@ export default function DiagramPanel() {
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== selectedNodeId) return n;
-          const nodeW = n.measured?.width ?? n.width ?? 80;
-          const nodeH = n.measured?.height ?? n.height ?? 80;
+          const nodeW = 32;
+          const nodeH = 32;
           const pos = cornerPosition(corner, parentW, parentH, nodeW, nodeH);
+          // Drop extent:'parent' so the icon can overhang the boundary
+          const { extent: _ext, ...rest } = n;
           return {
-            ...n,
+            ...rest,
             position: pos,
             data: { ...n.data, binding: { corner } },
           };
@@ -280,15 +354,19 @@ export default function DiagramPanel() {
       nds.map((n) => {
         if (n.id !== selectedNodeId) return n;
         const { binding: _, ...rest } = n.data as AzureNodeDataType;
-        return { ...n, data: rest as AzureNodeDataType };
+        // Leave extent unset — leaf nodes are free to move between groups
+        return {
+          ...n,
+          data: rest as AzureNodeDataType,
+        };
       }),
     );
   }, [selectedNodeId, setNodes]);
 
   const handleCycleCorner = useCallback(() => {
-    if (!selectedNodeId || !selectedData?.binding) return;
-    handleBind(nextCorner(selectedData.binding.corner));
-  }, [selectedNodeId, selectedData, handleBind]);
+    if (!selectedNodeId || !selectedData?.binding?.corner) return;
+    handlePinToCorner(nextCorner(selectedData.binding.corner));
+  }, [selectedNodeId, selectedData, handlePinToCorner]);
 
   const handleDelete = useCallback(() => {
     if (!selectedNodeId) return;
@@ -302,6 +380,103 @@ export default function DiagramPanel() {
     setDeleteConfirmOpen(false);
   }, [selectedNodeId, setNodes, setEdges, setSelectedNodeId]);
 
+  /** Move selected node to the END of the array — renders on top of siblings. */
+  const handleBringToFront = useCallback(() => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => {
+      const target = nds.find((n) => n.id === selectedNodeId);
+      if (!target) return nds;
+      return [...nds.filter((n) => n.id !== selectedNodeId), target];
+    });
+  }, [selectedNodeId, setNodes]);
+
+  /** Move selected node to the START of the array — renders behind siblings. */
+  const handleSendToBack = useCallback(() => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => {
+      const target = nds.find((n) => n.id === selectedNodeId);
+      if (!target) return nds;
+      return [target, ...nds.filter((n) => n.id !== selectedNodeId)];
+    });
+  }, [selectedNodeId, setNodes]);
+
+  // Re-parent a node when it's dragged onto a different group
+  const onNodeDragStop = useCallback(
+    (_: React.MouseEvent, node: { id: string }) => {
+      setNodes((nds) => {
+        const dragged = nds.find((n) => n.id === node.id) as AzureNode | undefined;
+        if (!dragged) return nds;
+        // Subnet group children (auto-managed) should not be re-parented
+        if (dragged.id.includes('__subnet__')) return nds;
+
+        // Compute absolute positions for hit-testing
+        const absPos = new Map<string, { x: number; y: number }>();
+        for (const n of nds) {
+          const px = n.parentId ? absPos.get(n.parentId) : undefined;
+          absPos.set(n.id, {
+            x: n.position.x + (px?.x ?? 0),
+            y: n.position.y + (px?.y ?? 0),
+          });
+        }
+        const draggedAbs = absPos.get(dragged.id)!;
+        const draggedW = dragged.measured?.width ?? (dragged.width as number) ?? 32;
+        const draggedH = dragged.measured?.height ?? (dragged.height as number) ?? 32;
+        const cx = draggedAbs.x + draggedW / 2;
+        const cy = draggedAbs.y + draggedH / 2;
+
+        // Find smallest group whose interior contains the dragged node's center.
+        // The current parent stays in the candidate pool so a small drag inside
+        // the same subnet doesn't get hijacked by a larger enclosing group.
+        const candidates = nds.filter((n) => {
+          if (n.id === dragged.id) return false;
+          if (n.type !== 'azureGroup') return false;
+          const w = (n.measured?.width ?? (n.width as number) ?? 0);
+          const h = (n.measured?.height ?? (n.height as number) ?? 0);
+          const ap = absPos.get(n.id)!;
+          return cx >= ap.x && cx <= ap.x + w && cy >= ap.y && cy <= ap.y + h;
+        });
+        if (candidates.length === 0) return nds;
+        const newParent = candidates.reduce((smallest, g) => {
+          const sA = (smallest.measured?.width ?? 0) * (smallest.measured?.height ?? 0);
+          const gA = (g.measured?.width ?? 0) * (g.measured?.height ?? 0);
+          return gA < sA ? g : smallest;
+        });
+
+        // Don't re-parent into our own descendant
+        let p: AzureNode | undefined = newParent;
+        while (p) {
+          if (p.id === dragged.id) return nds;
+          p = p.parentId ? (nds.find((x) => x.id === p!.parentId) as AzureNode | undefined) : undefined;
+        }
+
+        // No-op if the smallest containing group is still the current parent
+        if (newParent.id === dragged.parentId) return nds;
+
+        const newParentAbs = absPos.get(newParent.id)!;
+        return nds.map((n) => {
+          if (n.id !== dragged.id) return n;
+          return {
+            ...n,
+            parentId: newParent.id,
+            extent: 'parent' as const,
+            position: {
+              x: draggedAbs.x - newParentAbs.x,
+              y: draggedAbs.y - newParentAbs.y,
+            },
+            // Clear any stale binding because the corner anchor now refers
+            // to a different parent geometry.
+            data: (() => {
+              const d = n.data as AzureNodeDataType;
+              const { binding: _b, ...rest } = d;
+              return rest as AzureNodeDataType;
+            })(),
+          };
+        });
+      });
+    },
+    [setNodes],
+  );
+
   return (
     <div className="diagram-panel" ref={reactFlowWrapper}>
       <ReactFlow
@@ -313,6 +488,7 @@ export default function DiagramPanel() {
         onDragOver={onDragOver}
         onDrop={onDrop}
         onNodeClick={onNodeClick}
+        onNodeDragStop={onNodeDragStop}
         onPaneClick={onPaneClick}
         onInit={(instance) => {
           reactFlowInstance.current = instance;
@@ -322,6 +498,7 @@ export default function DiagramPanel() {
         deleteKeyCode={null} // Disable default delete — use our confirm dialog
         minZoom={0.5}
         multiSelectionKeyCode="Control"
+        connectionMode={ConnectionMode.Loose}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls />
@@ -348,34 +525,63 @@ export default function DiagramPanel() {
               appearance="subtle"
               icon={<PinRegular />}
               size="small"
-              onClick={() => handleBind('bottom-left')}
-              title="Bind to corner of parent group"
+              onClick={handleBind}
+              title="Bind to parent group (compact icon)"
             >
               Bind
             </Button>
           )}
-          {showUnbind && (
-            <>
-              <Button
-                appearance="subtle"
-                icon={<PinRegular />}
-                size="small"
-                onClick={handleCycleCorner}
-                title={`Move to next corner (currently ${selectedData?.binding?.corner})`}
-              >
-                {selectedData?.binding?.corner}
-              </Button>
-              <Button
-                appearance="subtle"
-                icon={<PinOffRegular />}
-                size="small"
-                onClick={handleUnbind}
-                title="Unbind from corner"
-              >
-                Unbind
-              </Button>
-            </>
+          {showPin && (
+            <Button
+              appearance="subtle"
+              icon={<PinRegular />}
+              size="small"
+              onClick={() => handlePinToCorner('bottom-left')}
+              title="Pin to corner of parent group"
+            >
+              Pin to corner
+            </Button>
           )}
+          {showCorner && (
+            <Button
+              appearance="subtle"
+              icon={<PinRegular />}
+              size="small"
+              onClick={handleCycleCorner}
+              title={`Move to next corner (currently ${selectedData?.binding?.corner})`}
+            >
+              {selectedData?.binding?.corner}
+            </Button>
+          )}
+          {showUnbind && (
+            <Button
+              appearance="subtle"
+              icon={<PinOffRegular />}
+              size="small"
+              onClick={handleUnbind}
+              title="Unbind from parent"
+            >
+              Unbind
+            </Button>
+          )}
+          <Button
+            appearance="subtle"
+            icon={<ArrowUpRegular />}
+            size="small"
+            onClick={handleBringToFront}
+            title="Bring to front (renders on top of overlapping nodes)"
+          >
+            Front
+          </Button>
+          <Button
+            appearance="subtle"
+            icon={<ArrowDownRegular />}
+            size="small"
+            onClick={handleSendToBack}
+            title="Send to back (renders behind overlapping nodes)"
+          >
+            Back
+          </Button>
           <Dialog
             open={deleteConfirmOpen}
             onOpenChange={(_, d) => setDeleteConfirmOpen(d.open)}

@@ -96,6 +96,15 @@
   height: 8px;
   background: #0078d4;
   border: 2px solid #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+  pointer-events: all;
+}
+
+.azure-group:hover .react-flow__handle,
+.azure-group.selected .react-flow__handle {
+  opacity: 1;
 }
 
 .azure-group--subnet .react-flow__handle {

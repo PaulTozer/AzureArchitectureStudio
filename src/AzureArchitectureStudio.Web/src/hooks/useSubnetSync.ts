@@ -1,9 +1,11 @@
 /**
- * useSubnetSync — Synchronises VNet subnet properties → child group nodes.
+ * useSubnetSync — Synchronises VNet `properties.subnets` → child group nodes.
  *
- * When a Virtual Network node's `properties.subnets` array changes, this hook
- * creates, updates, or removes corresponding child group nodes on the diagram
- * so they appear as grey-bordered containers inside the VNet.
+ * UNIDIRECTIONAL: The VNet's `properties.subnets` array is the source of
+ * truth. Subnet child group nodes are pure VIEWS of that array. They never
+ * write back to the VNet. To rename or change a subnet's address prefix,
+ * edits must be routed via the parent VNet (see NodeEditDrawer's special
+ * handling for subnet children).
  */
 
 import { useEffect, useRef } from 'react';
@@ -17,20 +19,36 @@ interface SubnetEntry {
 }
 
 const SUBNET_ICON = 'assets/azure-icons/networking/02742-icon-service-Subnet.svg';
+const SUBNET_ID_SEP = '__subnet__';
 
 /**
  * Derives a stable, deterministic child node ID from the VNet id + subnet
  * index so we can match existing nodes across renders.
  */
-function subnetNodeId(vnetId: string, index: number): string {
-  return `${vnetId}__subnet__${index}`;
+export function subnetNodeId(vnetId: string, index: number): string {
+  return `${vnetId}${SUBNET_ID_SEP}${index}`;
+}
+
+/**
+ * Parse a subnet child id back into its parent VNet id and index, or null
+ * if the id does not match the subnet child pattern.
+ */
+export function parseSubnetNodeId(id: string): { vnetId: string; index: number } | null {
+  const idx = id.indexOf(SUBNET_ID_SEP);
+  if (idx < 0) return null;
+  const vnetId = id.slice(0, idx);
+  const index = Number(id.slice(idx + SUBNET_ID_SEP.length));
+  if (!Number.isFinite(index)) return null;
+  return { vnetId, index };
 }
 
 export function useSubnetSync(
   nodes: AzureNode[],
   setNodes: React.Dispatch<React.SetStateAction<AzureNode[]>>,
 ) {
-  // Track previous subnet state per VNet to avoid unnecessary updates
+  // Fingerprint depends only on VNet props + dims. Children are pure
+  // derivations, so they don't enter the fingerprint and can't trigger
+  // a feedback loop.
   const prevRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -39,15 +57,15 @@ export function useSubnetSync(
       (n) => n.type === 'azureGroup' && (n.data as AzureNodeData).typeKey === 'virtual-networks',
     );
 
-    // Build fingerprints for current VNet subnet data
     for (const vnet of vnetNodes) {
       const data = vnet.data as AzureNodeData;
       const subnets = (data.properties?.subnets as SubnetEntry[] | undefined) ?? [];
-      const fp = JSON.stringify(subnets.map((s) => ({ name: s.name, addressPrefix: s.addressPrefix })));
+      const fp = JSON.stringify(
+        subnets.map((s) => ({ name: s.name, addressPrefix: s.addressPrefix })),
+      );
       nextFingerprints.set(vnet.id, fp);
     }
 
-    // Check if anything changed
     let changed = false;
     if (nextFingerprints.size !== prevRef.current.size) {
       changed = true;
@@ -58,7 +76,6 @@ export function useSubnetSync(
           break;
         }
       }
-      // Also check for removed VNets
       if (!changed) {
         for (const id of prevRef.current.keys()) {
           if (!nextFingerprints.has(id)) {
@@ -73,14 +90,10 @@ export function useSubnetSync(
     prevRef.current = nextFingerprints;
 
     setNodes((currentNodes) => {
-      // Collect all existing subnet child IDs
       const existingSubnetIds = new Set(
-        currentNodes
-          .filter((n) => (n.id as string).includes('__subnet__'))
-          .map((n) => n.id),
+        currentNodes.filter((n) => parseSubnetNodeId(n.id)).map((n) => n.id),
       );
 
-      // Desired subnet nodes
       const desiredSubnets: AzureNode[] = [];
       const desiredIds = new Set<string>();
 
@@ -88,10 +101,9 @@ export function useSubnetSync(
         const data = vnet.data as AzureNodeData;
         const subnets = (data.properties?.subnets as SubnetEntry[] | undefined) ?? [];
 
-        // Compute layout: evenly space subnets inside VNet
         const vnetWidth = vnet.measured?.width ?? vnet.width ?? 250;
         const vnetHeight = vnet.measured?.height ?? vnet.height ?? 200;
-        const headerHeight = 32; // group header area
+        const headerHeight = 32;
         const padding = 12;
         const subnetCount = subnets.length;
         const availableWidth = vnetWidth - padding * 2;
@@ -106,22 +118,26 @@ export function useSubnetSync(
           const id = subnetNodeId(vnet.id, i);
           desiredIds.add(id);
 
-          // Check if node already exists
           const existing = currentNodes.find((n) => n.id === id);
           const xPos = padding + i * (subnetWidth + 8);
           const yPos = headerHeight + padding;
+          const name = subnet.name || `Subnet ${i + 1}`;
 
           if (existing) {
-            // Update data only, preserve user-adjusted position
+            // Preserve user-adjusted position and size. Only the data
+            // (name + addressPrefix) mirrors the parent VNet props.
             desiredSubnets.push({
               ...existing,
               data: {
                 ...existing.data,
-                name: subnet.name || `Subnet ${i + 1}`,
+                name,
+                properties: {
+                  ...(existing.data as AzureNodeData).properties,
+                  addressPrefix: subnet.addressPrefix ?? '',
+                },
               },
             });
           } else {
-            // Create new subnet child node
             desiredSubnets.push({
               id,
               type: 'azureGroup',
@@ -131,7 +147,7 @@ export function useSubnetSync(
               data: {
                 typeKey: 'subnet',
                 imagePath: SUBNET_ICON,
-                name: subnet.name || `Subnet ${i + 1}`,
+                name,
                 location: '',
                 useResourceGroupLocation: true,
                 isValid: true,
@@ -145,34 +161,30 @@ export function useSubnetSync(
         }
       }
 
-      // IDs to remove: existing subnet nodes not in desired set, and not
-      // belonging to a VNet that still exists
       const idsToRemove = new Set<string>();
       for (const id of existingSubnetIds) {
-        if (!desiredIds.has(id)) {
-          idsToRemove.add(id);
-        }
+        if (!desiredIds.has(id)) idsToRemove.add(id);
       }
 
-      // Build final node array:
-      // 1. Keep all non-subnet nodes as-is
-      // 2. Replace/add desired subnet nodes
-      // 3. Remove stale subnet nodes
       const nonSubnets = currentNodes.filter(
         (n) => !existingSubnetIds.has(n.id) && !idsToRemove.has(n.id),
       );
 
-      // Ensure parent VNet nodes come before their subnet children
-      const result = [...nonSubnets];
-      for (const sn of desiredSubnets) {
-        // Remove from result if already there (from nonSubnets)
-        const idx = result.findIndex((n) => n.id === sn.id);
-        if (idx >= 0) result.splice(idx, 1);
-      }
-      // Append subnets after their parents
-      result.push(...desiredSubnets);
+      const merged: AzureNode[] = [...nonSubnets, ...desiredSubnets];
 
-      return result;
+      // React Flow v12 requires parents before children in the array.
+      const byId = new Map(merged.map((n) => [n.id, n] as const));
+      const visited = new Set<string>();
+      const ordered: AzureNode[] = [];
+      const visit = (n: AzureNode) => {
+        if (visited.has(n.id)) return;
+        if (n.parentId && byId.has(n.parentId)) visit(byId.get(n.parentId)!);
+        visited.add(n.id);
+        ordered.push(n);
+      };
+      for (const n of merged) visit(n);
+
+      return ordered;
     });
   }, [nodes, setNodes]);
 }

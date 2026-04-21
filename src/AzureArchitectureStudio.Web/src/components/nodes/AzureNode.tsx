@@ -8,8 +8,9 @@ import './AzureNode.css';
 
 function AzureNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as AzureNodeData;
+  const isPinned = !!(nodeData.binding && nodeData.binding.corner);
   return (
-    <div className={`azure-node ${selected ? 'selected' : ''}`}>
+    <div className={`azure-node ${selected ? 'selected' : ''} ${isPinned ? 'azure-node--bound' : ''}`}>
       <Handle type="target" position={Position.Top} id="top" />
       <Handle type="target" position={Position.Left} id="left" />
       <img
@@ -18,7 +19,7 @@ function AzureNodeComponent({ data, selected }: NodeProps) {
         className="azure-node-icon"
         draggable={false}
       />
-      <div className="azure-node-label">{nodeData.name}</div>
+      {!isPinned && <div className="azure-node-label">{nodeData.name}</div>}
       {!nodeData.isValid && (
         <WarningFilled className="azure-node-warning" />
       )}
