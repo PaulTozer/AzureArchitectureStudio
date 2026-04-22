@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureArchitectureStudio", "AzureArchitectureStudio\AzureArchitectureStudio.csproj", "{1165BCF5-3FEB-44DF-872E-876EBBC43874}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureArchitectureStudio.Core", "AzureArchitectureStudio.Core\AzureArchitectureStudio.Core.csproj", "{661D9889-F3BA-4C5B-954C-91B825E27EB8}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureArchitectureStudio.Core.Tests", "AzureArchitectureStudio.Core.Tests\AzureArchitectureStudio.Core.Tests.csproj", "{3AB3188D-FB5D-4545-8139-A49C7FBC8B11}"
@@ -36,10 +34,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{1165BCF5-3FEB-44DF-872E-876EBBC43874}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1165BCF5-3FEB-44DF-872E-876EBBC43874}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1165BCF5-3FEB-44DF-872E-876EBBC43874}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1165BCF5-3FEB-44DF-872E-876EBBC43874}.Release|Any CPU.Build.0 = Release|Any CPU
 		{661D9889-F3BA-4C5B-954C-91B825E27EB8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{661D9889-F3BA-4C5B-954C-91B825E27EB8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{661D9889-F3BA-4C5B-954C-91B825E27EB8}.Release|Any CPU.ActiveCfg = Release|Any CPU
