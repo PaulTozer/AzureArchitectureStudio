@@ -90,6 +90,19 @@ const KEY_ALIASES: Record<string, string> = {
   firewalls: 'azure-firewall',
   'virtual-network-gateways': 'vpn-gateway',
   'resource-groups': 'resource-group',
+  'front-door-and-cdn-profiles': 'front-door',
+  'load-balancer-hub': 'load-balancer',
+  'network-watcher': 'network-watcher',
+  nat: 'nat-gateways',
+  'azure-cache-for-redis': 'redis-cache',
+  'container-registries': 'container-registry',
+  'key-vaults': 'key-vault',
+  'service-bus-namespaces': 'service-bus',
+  'event-hubs': 'event-hub',
+  'log-analytics-workspaces': 'log-analytics',
+  'static-web-apps': 'static-web-app',
+  'azure-database-for-mysql-flexible-servers': 'mysql',
+  'azure-database-for-postgresql-flexible-servers': 'postgresql',
 };
 
 /** Resolves any incoming key to its canonical registry key. */
@@ -183,27 +196,44 @@ export async function getResourceTypeAsync(
   const curated = registry.get(k);
   if (curated) return curated;
 
-  // 2. Previously resolved dynamic definition
+  // 2. Previously resolved dynamic definition (only cache real ARM resolutions)
   const cached = dynamicRegistry.get(k);
   if (cached) return cached;
 
+  // Ensure the ARM type map is loaded — drawer may open before App finishes.
+  if (Object.keys(armTypeMap).length === 0) {
+    try { await loadResourceTypeRegistry(); } catch { /* ignore */ }
+  }
+
   // 3. Try to resolve from ARM schema
   const armType = armTypeMap[k] ?? armTypeMap[key];
-  if (!armType) return undefined;
+  if (armType) {
+    const propertySchema = await fetchArmPropertySchema(armType);
+    const apiVersion = getConfiguredApiVersion(armType) ?? 'unknown';
 
-  const propertySchema = await fetchArmPropertySchema(armType);
-  const apiVersion = getConfiguredApiVersion(armType) ?? 'unknown';
+    const def: ResourceTypeDefinition = {
+      key: k,
+      displayName: displayName ?? humanizeKey(k),
+      armType,
+      apiVersion,
+      propertySchema,
+    };
 
-  const def: ResourceTypeDefinition = {
+    dynamicRegistry.set(k, def);
+    return def;
+  }
+
+  // 4. Fallback: provide generic properties for any unmapped service.
+  // Do NOT cache — if the map loads later we want a fresh attempt.
+  return {
     key: k,
     displayName: displayName ?? humanizeKey(k),
-    armType,
-    apiVersion,
-    propertySchema,
+    armType: '',
+    apiVersion: '',
+    propertySchema: [
+      { key: 'tags', label: 'Tags', type: 'string', placeholder: 'Comma-separated key:value pairs' },
+    ],
   };
-
-  dynamicRegistry.set(k, def);
-  return def;
 }
 
 /**

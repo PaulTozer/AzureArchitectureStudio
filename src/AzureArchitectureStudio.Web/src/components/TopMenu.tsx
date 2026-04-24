@@ -37,7 +37,7 @@ import {
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
-import { loginRequest, bicepService } from '../services';
+import { azureManagementRequest, isAuthConfigured, bicepService } from '../services';
 import {
   createArmTemplate,
   getArmResourcesForNode,
@@ -46,6 +46,7 @@ import {
 import { toPng } from 'html-to-image';
 import CodeDrawer from './drawers/CodeDrawer';
 import SaveDrawer from './drawers/SaveDrawer';
+import SubscriptionPicker from './SubscriptionPicker';
 import './TopMenu.css';
 
 export default function TopMenu() {
@@ -82,12 +83,20 @@ export default function TopMenu() {
   );
 
   const handleLogin = useCallback(async () => {
+    if (!isAuthConfigured) {
+      showToast(
+        'Azure sign-in not configured. Set VITE_AZURE_CLIENT_ID in .env.local.',
+        'error',
+      );
+      return;
+    }
     try {
-      await instance.loginPopup(loginRequest);
+      await instance.loginPopup(azureManagementRequest);
     } catch (err) {
       console.error('Login failed:', err);
+      showToast('Sign-in failed.', 'error');
     }
-  }, [instance]);
+  }, [instance, showToast]);
 
   const handleLogout = useCallback(async () => {
     await instance.logoutPopup();
@@ -220,6 +229,9 @@ export default function TopMenu() {
 
           <ToolbarDivider />
 
+          {/* Azure subscription picker (visible after sign-in) */}
+          <SubscriptionPicker />
+
           {/* User */}
           {isAuthenticated ? (
             <Menu>
@@ -244,7 +256,7 @@ export default function TopMenu() {
               icon={<PersonRegular />}
               onClick={handleLogin}
             >
-              Sign in
+              Sign in to Azure
             </ToolbarButton>
           )}
         </Toolbar>

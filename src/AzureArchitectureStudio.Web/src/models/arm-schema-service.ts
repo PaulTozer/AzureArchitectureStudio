@@ -46,6 +46,39 @@ const providerConfig: Record<string, { fileName?: string; apiVersion: string }> 
   'Microsoft.ContainerInstance': { apiVersion: '2023-05-01' },
   'Microsoft.App': { apiVersion: '2024-03-01' },
   'Microsoft.EventGrid': { apiVersion: '2022-06-15' },
+  'Microsoft.Devices': { apiVersion: '2023-06-30' },
+  'Microsoft.IoTCentral': { apiVersion: '2021-06-01' },
+  'Microsoft.Logic': { apiVersion: '2019-05-01' },
+  'Microsoft.NotificationHubs': { apiVersion: '2023-01-01' },
+  'Microsoft.MachineLearningServices': { apiVersion: '2023-06-01-preview' },
+  'Microsoft.BotService': { apiVersion: '2022-09-15' },
+  'Microsoft.Search': { apiVersion: '2023-11-01' },
+  'Microsoft.Databricks': { apiVersion: '2023-02-01' },
+  'Microsoft.DataProtection': { apiVersion: '2023-01-01' },
+  'Microsoft.RecoveryServices': { apiVersion: '2023-04-01' },
+  'Microsoft.DataFactory': { apiVersion: '2018-06-01' },
+  'Microsoft.StreamAnalytics': { apiVersion: '2021-10-01-preview' },
+  'Microsoft.DataLakeAnalytics': { apiVersion: '2016-11-01' },
+  'Microsoft.DataLakeStore': { apiVersion: '2016-11-01' },
+  'Microsoft.Maps': { apiVersion: '2023-06-01' },
+  'Microsoft.SecurityInsights': { apiVersion: '2022-11-01' },
+  'Microsoft.Resources': { apiVersion: '2023-07-01' },
+  'Microsoft.Authorization': { apiVersion: '2022-04-01' },
+  'Microsoft.Batch': { apiVersion: '2023-05-01' },
+  'Microsoft.Media': { apiVersion: '2023-01-01' },
+  'Microsoft.Synapse': { apiVersion: '2021-06-01' },
+  'Microsoft.AnalysisServices': { apiVersion: '2017-08-01' },
+  'Microsoft.DBforMariaDB': { apiVersion: '2018-06-01' },
+  'Microsoft.AppConfiguration': { apiVersion: '2023-03-01' },
+  'Microsoft.HealthcareApis': { apiVersion: '2023-02-28' },
+  'Microsoft.Purview': { apiVersion: '2021-07-01' },
+  'Microsoft.Relay': { apiVersion: '2021-11-01' },
+  'Microsoft.TimeSeriesInsights': { apiVersion: '2020-05-15' },
+  'Microsoft.DigitalTwins': { apiVersion: '2023-01-31' },
+  'Microsoft.NetApp': { apiVersion: '2023-07-01' },
+  'Microsoft.StorageCache': { apiVersion: '2023-05-01' },
+  'Microsoft.DataBoxEdge': { apiVersion: '2023-07-01' },
+  'Microsoft.Migrate': { apiVersion: '2023-03-15' },
 };
 
 const GITHUB_RAW_BASE =
@@ -108,7 +141,7 @@ export async function fetchArmPropertySchema(
     const propsDef = resolvePropertySpec(propsSpec, schema);
     if (!propsDef?.properties) return [];
 
-    const fields = convertProperties(propsDef.properties, schema);
+    const fields = convertProperties(propsDef.properties, schema, 0, propsDef.required ?? []);
     propertyFieldCache.set(armType, fields);
     return fields;
   } catch {
@@ -194,11 +227,16 @@ function convertProperties(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   root: any,
   depth = 0,
+  required: string[] = [],
 ): PropertyField[] {
   const fields: PropertyField[] = [];
+  const requiredSet = new Set(required);
   for (const [key, prop] of Object.entries(properties)) {
     const result = convertSingleProperty(key, prop, root, depth);
-    if (result) fields.push(result);
+    if (result) {
+      if (requiredSet.has(key)) result.required = true;
+      fields.push(result);
+    }
   }
   return fields;
 }
@@ -268,7 +306,7 @@ function convertSingleProperty(
 
   // --- Nested object → 'object' field with children ---
   if (resolvedObjectDef?.properties) {
-    const children = convertProperties(resolvedObjectDef.properties, root, depth + 1);
+    const children = convertProperties(resolvedObjectDef.properties, root, depth + 1, resolvedObjectDef.required ?? []);
     if (children.length === 0) return null;
     return { key, label, type: 'object', children };
   }
@@ -302,7 +340,7 @@ function convertSingleProperty(
       if (innerPropsSpec) {
         const innerDef = resolvePropertySpec(innerPropsSpec, root);
         if (innerDef?.properties) {
-          childProps = convertProperties(innerDef.properties, root, depth + 1);
+          childProps = convertProperties(innerDef.properties, root, depth + 1, innerDef.required ?? []);
         }
       }
 

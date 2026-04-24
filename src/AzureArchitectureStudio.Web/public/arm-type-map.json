@@ -84,5 +84,129 @@
 
   "application-insights": "Microsoft.Insights/components",
 
-  "azure-front-door-profiles": "Microsoft.Cdn/profiles"
+  "azure-front-door-profiles": "Microsoft.Cdn/profiles",
+
+  "local-network-gateways": "Microsoft.Network/localNetworkGateways",
+  "expressroute-circuits": "Microsoft.Network/expressRouteCircuits",
+  "dns-zones": "Microsoft.Network/dnsZones",
+  "dns-private-resolver": "Microsoft.Network/dnsResolvers",
+  "public-ip-prefixes": "Microsoft.Network/publicIPPrefixes",
+  "route-filters": "Microsoft.Network/routeFilters",
+  "service-endpoint-policies": "Microsoft.Network/serviceEndpointPolicies",
+  "virtual-wans": "Microsoft.Network/virtualWans",
+  "virtual-wan-hub": "Microsoft.Network/virtualHubs",
+  "virtual-router": "Microsoft.Network/virtualRouters",
+  "azure-firewall-policy": "Microsoft.Network/firewallPolicies",
+  "private-link-service": "Microsoft.Network/privateLinkServices",
+  "web-application-firewall-policieswaf": "Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies",
+
+  "vm-scale-sets": "Microsoft.Compute/virtualMachineScaleSets",
+
+  "iot-hub": "Microsoft.Devices/IotHubs",
+  "iot-central-applications": "Microsoft.IoTCentral/iotApps",
+
+  "logic-apps": "Microsoft.Logic/workflows",
+  "azure-service-bus": "Microsoft.ServiceBus/namespaces",
+  "notification-hubs": "Microsoft.NotificationHubs/namespaces",
+
+  "machine-learning": "Microsoft.MachineLearningServices/workspaces",
+  "bot-services": "Microsoft.BotService/botServices",
+  "cognitive-search": "Microsoft.Search/searchServices",
+  "azure-databricks": "Microsoft.Databricks/workspaces",
+
+  "backup-vault": "Microsoft.DataProtection/backupVaults",
+  "recovery-services-vaults": "Microsoft.RecoveryServices/vaults",
+
+  "data-factory": "Microsoft.DataFactory/factories",
+  "stream-analytics-jobs": "Microsoft.StreamAnalytics/streamingjobs",
+  "data-lake-analytics": "Microsoft.DataLakeAnalytics/accounts",
+  "data-lake-store": "Microsoft.DataLakeStore/accounts",
+
+  "azure-maps-accounts": "Microsoft.Maps/accounts",
+  "managed-disks": "Microsoft.Compute/disks",
+
+  "batch-accounts": "Microsoft.Batch/batchAccounts",
+  "media-services": "Microsoft.Media/mediaservices",
+  "azure-synapse-analytics": "Microsoft.Synapse/workspaces",
+  "analysis-services": "Microsoft.AnalysisServices/servers",
+  "azure-database-mariadb-server": "Microsoft.DBforMariaDB/servers",
+  "azure-database-mysql-server": "Microsoft.DBforMySQL/servers",
+  "azure-database-postgresql-server": "Microsoft.DBforPostgreSQL/servers",
+  "app-configuration": "Microsoft.AppConfiguration/configurationStores",
+  "azure-api-for-fhir": "Microsoft.HealthcareApis/services",
+  "azure-purview-accounts": "Microsoft.Purview/accounts",
+  "relay": "Microsoft.Relay/namespaces",
+  "time-series-insights-environments": "Microsoft.TimeSeriesInsights/environments",
+  "azure-digital-twins": "Microsoft.DigitalTwins/digitalTwinsInstances",
+  "azure-netapp-files": "Microsoft.NetApp/netAppAccounts",
+  "azure-hcp-cache": "Microsoft.StorageCache/caches",
+  "azure-stack-edge": "Microsoft.DataBoxEdge/dataBoxEdgeDevices",
+  "azure-databox-gateway": "Microsoft.DataBoxEdge/dataBoxEdgeDevices",
+
+  "network-watcher": "Microsoft.Network/networkWatchers",
+  "application-security-groups": "Microsoft.Network/applicationSecurityGroups",
+
+  "azure-data-explorer-clusters": "Microsoft.Kusto/clusters",
+  "azure-red-hat-openshift": "Microsoft.RedHatOpenShift/openShiftClusters",
+  "managed-identities": "Microsoft.ManagedIdentity/userAssignedIdentities",
+  "data-box": "Microsoft.DataBox/jobs",
+  "azure-migrate": "Microsoft.Migrate/migrateProjects",
+
+  "app-service-domains": "Microsoft.DomainRegistration/domains",
+  "app-service-environments": "Microsoft.Web/hostingEnvironments",
+
+  "azure-iot-operations": "Microsoft.IoTOperationsOrchestrator/targets",
+
+  "spatial-anchor-accounts": "Microsoft.MixedReality/spatialAnchorsAccounts",
+  "remote-rendering": "Microsoft.MixedReality/remoteRenderingAccounts",
+
+  "azure-sentinel": "Microsoft.OperationsManagement/solutions",
+  "azure-information-protection": "Microsoft.InformationProtection/policies",
+
+  "cost-management-and-billing": "Microsoft.CostManagement/exports",
+
+  "azure-devops": "Microsoft.DevOps/pipelines",
+  "devtest-labs": "Microsoft.DevTestLab/labs",
+  "lab-services": "Microsoft.LabServices/labaccounts",
+
+  "power-platform": "Microsoft.PowerPlatform/enterprisePolicies",
+
+  "azure-spring-apps": "Microsoft.AppPlatform/Spring",
+  "container-apps-environments": "Microsoft.App/managedEnvironments",
+
+  "azure-monitor-pipeline": "Microsoft.Monitor/pipelineGroups",
+  "azure-workbooks": "Microsoft.Insights/workbooks",
+  "auto-scale": "Microsoft.Insights/autoscalesettings",
+  "alerts": "Microsoft.Insights/metricAlerts",
+  "activity-log": "Microsoft.Insights/activityLogAlerts",
+
+  "ddos-protection-plans": "Microsoft.Network/ddosProtectionPlans",
+  "ip-groups": "Microsoft.Network/ipGroups",
+
+  "arc-machines": "Microsoft.HybridCompute/machines",
+  "automation-accounts": "Microsoft.Automation/automationAccounts",
+  "advisor": "Microsoft.Advisor/configurations",
+  "blueprints": "Microsoft.Blueprint/blueprints",
+  "policy": "Microsoft.Authorization/policyDefinitions",
+
+  "sql-managed-instances": "Microsoft.Sql/managedInstances",
+  "sql-elastic-pools": "Microsoft.Sql/servers/elasticPools",
+  "azure-database-migration-services": "Microsoft.DataMigration/services",
+
+  "azure-blockchain-service": "Microsoft.Blockchain/blockchainMembers",
+
+  "notification-hub-namespaces": "Microsoft.NotificationHubs/namespaces",
+
+  "disk-encryption-sets": "Microsoft.Compute/diskEncryptionSets",
+  "host-groups": "Microsoft.Compute/hostGroups",
+  "capacity-reservation-groups": "Microsoft.Compute/capacityReservationGroups",
+  "image-templates": "Microsoft.VirtualMachineImages/imageTemplates",
+
+  "front-door-and-cdn-profiles": "Microsoft.Cdn/profiles",
+  "load-balancer-hub": "Microsoft.Network/loadBalancers",
+  "nat": "Microsoft.Network/natGateways",
+  "subnet": "Microsoft.Network/virtualNetworks/subnets",
+  "private-link": "Microsoft.Network/privateLinkServices",
+  "spot-vm": "Microsoft.Compute/virtualMachines",
+  "spot-vmss": "Microsoft.Compute/virtualMachineScaleSets"
 }

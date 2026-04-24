@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -7,7 +7,10 @@ import {
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
+  reconnectEdge,
   type Connection,
+  type Edge,
+  type EdgeTypes,
   type NodeTypes,
   type OnConnect,
   type ReactFlowInstance,
@@ -47,6 +50,8 @@ import {
 } from '../../models';
 import AzureNodeComponent from '../nodes/AzureNode';
 import AzureGroupComponent from '../nodes/AzureGroup';
+import DeletableEdge from '../edges/DeletableEdge';
+import '../edges/DeletableEdge.css';
 import NodeEditDrawer from '../drawers/NodeEditDrawer';
 import { useSubnetSync } from '../../hooks/useSubnetSync';
 import { useBindingSync, cornerPosition, nextCorner } from '../../hooks/useBindingSync';
@@ -57,6 +62,10 @@ import './DiagramPanel.css';
 const nodeTypes: NodeTypes = {
   azureNode: AzureNodeComponent,
   azureGroup: AzureGroupComponent,
+};
+
+const edgeTypes: EdgeTypes = {
+  deletable: DeletableEdge,
 };
 
 let nodeIdCounter = 0;
@@ -88,6 +97,13 @@ export default function DiagramPanel() {
   // Recompute node validity from required-dependency fulfilment
   useDependencyValidationSync(nodes, edges, setNodes);
 
+  // Ensure every edge uses our custom deletable renderer so the × button
+  // shows on saved / imported edges as well as new ones.
+  const displayEdges = useMemo(
+    () => edges.map((e) => (e.type === 'deletable' ? e : { ...e, type: 'deletable' })),
+    [edges],
+  );
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds) as AzureNode[]);
@@ -104,16 +120,47 @@ export default function DiagramPanel() {
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
+      // eslint-disable-next-line no-console
+      console.log('[DiagramPanel] onConnect fired', connection);
+      if (connection.source === connection.target) return;
       setEdges((eds) =>
         addEdge(
           {
             ...connection,
+            type: 'deletable',
             animated: false,
             style: { stroke: '#0078d4', strokeWidth: 1 },
           },
           eds
         )
       );
+    },
+    [setEdges]
+  );
+
+  // Track whether an ongoing reconnect actually dropped onto a valid target.
+  // If not, we remove the edge entirely.
+  const edgeReconnectSuccessful = useRef(true);
+
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      if (newConnection.source === newConnection.target) return;
+      edgeReconnectSuccessful.current = true;
+      setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+    },
+    [setEdges]
+  );
+
+  const onReconnectEnd = useCallback(
+    (_: unknown, edge: Edge) => {
+      if (!edgeReconnectSuccessful.current) {
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+      edgeReconnectSuccessful.current = true;
     },
     [setEdges]
   );
@@ -499,10 +546,13 @@ export default function DiagramPanel() {
     <div className="diagram-panel" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onReconnect={onReconnect}
+        onReconnectStart={onReconnectStart}
+        onReconnectEnd={onReconnectEnd}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onNodeClick={onNodeClick}
@@ -512,8 +562,10 @@ export default function DiagramPanel() {
           reactFlowInstance.current = instance;
         }}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'deletable' }}
         fitView
-        deleteKeyCode={null} // Disable default delete — use our confirm dialog
+        deleteKeyCode={['Backspace', 'Delete']}
         minZoom={0.5}
         multiSelectionKeyCode="Control"
         connectionMode={ConnectionMode.Loose}

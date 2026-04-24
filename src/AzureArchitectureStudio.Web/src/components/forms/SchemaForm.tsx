@@ -96,7 +96,7 @@ function SchemaField({ field, value, onChange }: SchemaFieldProps) {
 
     case 'boolean':
       return (
-        <Field label={field.label}>
+        <Field label={field.label} required={field.required}>
           <Switch
             checked={Boolean(value ?? field.defaultValue)}
             onChange={(_, d) => onChange(field.key, d.checked)}
@@ -124,7 +124,7 @@ function SchemaField({ field, value, onChange }: SchemaFieldProps) {
 
     case 'radio':
       return (
-        <Field label={field.label}>
+        <Field label={field.label} required={field.required}>
           <RadioGroup
             value={(value as string) ?? ''}
             onChange={(_, d) => onChange(field.key, d.value)}
@@ -196,7 +196,7 @@ function ArrayField({ field, value, onChange }: ArrayFieldProps) {
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Field label={field.label} />
+        <Field label={field.label} required={field.required} />
         <Tooltip content={`Add ${field.itemSchema?.label ?? 'item'}`} relationship="label">
           <Button
             appearance="subtle"
@@ -257,6 +257,7 @@ function ObjectField({ field, value, onChange }: ObjectFieldProps) {
         style={{ fontWeight: 600, paddingLeft: 0 }}
       >
         {field.label}
+        {field.required && <span style={{ color: 'var(--colorPaletteRedForeground1)', marginLeft: 4 }}>*</span>}
       </Button>
       {expanded && (
         <div style={{ marginLeft: 12, borderLeft: '2px solid var(--colorNeutralStroke2)', paddingLeft: 12, marginTop: 4 }}>
@@ -325,7 +326,10 @@ function ObjectArrayField({ field, value, onChange }: ObjectArrayFieldProps) {
   return (
     <div style={{ marginTop: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>{field.label}</span>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          {field.label}
+          {field.required && <span style={{ color: 'var(--colorPaletteRedForeground1)', marginLeft: 4 }}>*</span>}
+        </span>
         <Tooltip content={`Add ${field.label}`} relationship="label">
           <Button appearance="subtle" icon={<AddRegular />} size="small" onClick={handleAdd} />
         </Tooltip>

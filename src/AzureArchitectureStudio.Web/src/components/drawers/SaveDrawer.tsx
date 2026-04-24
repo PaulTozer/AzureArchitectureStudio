@@ -166,7 +166,27 @@ export default function SaveDrawer({ open, onClose }: SaveDrawerProps) {
           style: { stroke: '#0078d4', strokeWidth: 1 },
         }));
 
-        setNodes(rfNodes);
+        // React Flow v12 requires parents before children
+        const nodeById = new Map(rfNodes.map((n) => [n.id, n] as const));
+        const visited = new Set<string>();
+        const sorted: typeof rfNodes = [];
+        const visit = (n: (typeof rfNodes)[number]) => {
+          if (visited.has(n.id)) return;
+          const pid = (n as { parentId?: string }).parentId;
+          if (pid && nodeById.has(pid)) visit(nodeById.get(pid)!);
+          else if (pid && !nodeById.has(pid)) {
+            // Orphaned parentId — strip it
+            const { parentId: _p, extent: _e, ...rest } = n as typeof n & { parentId?: string; extent?: unknown };
+            visited.add(n.id);
+            sorted.push(rest as typeof n);
+            return;
+          }
+          visited.add(n.id);
+          sorted.push(n);
+        };
+        for (const n of rfNodes) visit(n);
+
+        setNodes(sorted as AzureNode[]);
         setEdges(rfEdges);
         setCurrentDesignName(selectedDesign);
         showToast('Design loaded.', 'success');

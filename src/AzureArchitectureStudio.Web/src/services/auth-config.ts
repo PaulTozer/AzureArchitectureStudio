@@ -1,11 +1,17 @@
 import { PublicClientApplication, type Configuration } from '@azure/msal-browser';
 
+// Entra ID (Azure AD) client app for Azure Management API access.
+// Configure via Vite env vars (.env.local):
+//   VITE_AZURE_CLIENT_ID  – your SPA app registration client ID
+//   VITE_AZURE_TENANT_ID  – tenant ID, or 'organizations' (default) for any work/school account,
+//                           or 'common' to also allow personal Microsoft accounts
+const clientId = import.meta.env.VITE_AZURE_CLIENT_ID ?? '';
+const tenantId = import.meta.env.VITE_AZURE_TENANT_ID ?? 'organizations';
+
 const msalConfig: Configuration = {
   auth: {
-    clientId: '53903153-545a-408e-a16d-1cc5a8b304e9',
-    authority:
-      'https://azdesignapp.b2clogin.com/azdesignapp.onmicrosoft.com/B2C_1_adssigninup',
-    knownAuthorities: ['azdesignapp.b2clogin.com'],
+    clientId,
+    authority: `https://login.microsoftonline.com/${tenantId}`,
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
@@ -14,10 +20,14 @@ const msalConfig: Configuration = {
   },
 };
 
-export const loginRequest = {
-  scopes: [
-    'https://azdesignapp.onmicrosoft.com/b29c5bdd-7bd6-4f43-835f-e2c9c358491e/Server.Access',
-  ],
+/** Scope for calling Azure Resource Manager (ARM) REST APIs. */
+export const azureManagementRequest = {
+  scopes: ['https://management.azure.com/user_impersonation'],
 };
 
+/** Backwards-compat alias used by api.ts for backend calls. */
+export const loginRequest = azureManagementRequest;
+
 export const msalInstance = new PublicClientApplication(msalConfig);
+
+export const isAuthConfigured = clientId.length > 0;

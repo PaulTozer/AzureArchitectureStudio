@@ -4,6 +4,7 @@
   align-items: center;
   width: 72px;
   padding: 6px 4px;
+  gap: 4px;
   border-radius: 4px;
   cursor: grab;
   transition: background 0.15s;
@@ -24,7 +25,7 @@
 }
 
 .stencil-label {
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 10px;
   text-align: center;
   color: var(--colorNeutralForeground2);

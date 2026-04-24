@@ -23,6 +23,7 @@ import { useAppContext } from '../../context/AppContext';
 import type { AzureServiceModel } from '../../models';
 import StencilItem from './StencilItem';
 import './StencilPanel.css';
+import './StencilItem.css';
 
 export default function StencilPanel() {
   const { azureServices } = useAppContext();
