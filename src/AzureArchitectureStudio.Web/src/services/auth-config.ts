@@ -12,6 +12,7 @@ const msalConfig: Configuration = {
   auth: {
     clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
+    // Default redirect for full-page redirect flows.
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
@@ -19,6 +20,14 @@ const msalConfig: Configuration = {
     cacheLocation: 'localStorage',
   },
 };
+
+/**
+ * Static blank page used as the popup redirect target. Loading the full
+ * SPA inside the popup causes React to mutate the URL before MSAL can
+ * read the auth response hash, so we land the popup on this tiny page
+ * instead and the opener window picks the hash up via URL polling.
+ */
+export const popupRedirectUri = `${window.location.origin}/auth-redirect.html`;
 
 /** Scope for calling Azure Resource Manager (ARM) REST APIs. */
 export const azureManagementRequest = {

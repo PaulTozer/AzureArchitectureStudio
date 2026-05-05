@@ -53,7 +53,7 @@ export interface ResourceTypeDefinition {
   armType: string;
   apiVersion: string;
   isGroup?: boolean;
-  groupVariant?: 'resource-group' | 'vnet' | 'subnet';
+  groupVariant?: 'resource-group' | 'vnet' | 'subnet' | 'subscription';
   groupStyle?: { width: number; height: number };
   armDefaults?: Record<string, unknown>;
   propertySchema: PropertyField[];
@@ -317,7 +317,7 @@ async function enrichCuratedAsync(
       ...curated.propertySchema,
       {
         key: '__armSpecAdvanced__',
-        label: 'Advanced (from ARM spec)',
+        label: 'Advanced',
         type: 'object',
         children: filtered,
       },

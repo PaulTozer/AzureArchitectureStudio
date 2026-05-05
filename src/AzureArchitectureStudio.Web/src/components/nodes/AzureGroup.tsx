@@ -9,6 +9,7 @@ const variantColors: Record<string, string> = {
   vnet: '#0078d4',
   subnet: '#888888',
   'resource-group': '#a0a0a0',
+  subscription: '#0078d4',
 };
 
 function AzureGroupComponent({ data, selected }: NodeProps) {

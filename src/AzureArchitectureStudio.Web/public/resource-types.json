@@ -1,5 +1,64 @@
 [
   {
+    "key": "management-groups",
+    "displayName": "Management Group",
+    "armType": "Microsoft.Management/managementGroups",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Contoso Platform"
+      },
+      {
+        "key": "parentManagementGroupId",
+        "label": "Parent Management Group ID",
+        "type": "string",
+        "placeholder": "/providers/Microsoft.Management/managementGroups/<parent>"
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "displayName": "properties.displayName",
+        "parentManagementGroupId": "properties.details.parent.id"
+      }
+    }
+  },
+  {
+    "key": "subscriptions",
+    "displayName": "Subscription",
+    "armType": "Microsoft.Resources/subscriptions",
+    "apiVersion": "2022-12-01",
+    "isGroup": true,
+    "groupStyle": {
+      "width": 900,
+      "height": 650
+    },
+    "propertySchema": [
+      {
+        "key": "subscriptionId",
+        "label": "Subscription ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Landing Zone A2"
+      },
+      {
+        "key": "managementGroupId",
+        "label": "Parent Management Group ID",
+        "type": "string",
+        "placeholder": "/providers/Microsoft.Management/managementGroups/<mg>"
+      }
+    ],
+    "armMapping": {},
+    "groupVariant": "subscription"
+  },
+  {
     "key": "resource-group",
     "displayName": "Resource Group",
     "armType": "Microsoft.Resources/resourceGroups",

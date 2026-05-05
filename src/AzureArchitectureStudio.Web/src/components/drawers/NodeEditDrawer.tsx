@@ -72,20 +72,22 @@ export default function NodeEditDrawer({
 
   useEffect(() => {
     const syncDef = getResourceType(data.typeKey);
+    // Always show the curated def immediately if present so the form has
+    // something to render — but ALSO kick off the async enrichment so the
+    // "Advanced (from ARM spec)" group gets merged in once the GitHub
+    // schema fetch completes.
     if (syncDef) {
       setResourceDef(syncDef);
       setLoading(false);
-      return;
+    } else {
+      setLoading(true);
     }
 
-    // Attempt dynamic ARM schema resolution
     let cancelled = false;
-    setLoading(true);
     getResourceTypeAsync(data.typeKey).then((def) => {
-      if (!cancelled) {
-        setResourceDef(def);
-        setLoading(false);
-      }
+      if (cancelled) return;
+      if (def) setResourceDef(def);
+      setLoading(false);
     });
     return () => { cancelled = true; };
   }, [data.typeKey, data.label]);

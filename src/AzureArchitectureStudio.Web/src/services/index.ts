@@ -3,9 +3,12 @@ export { designService, deployService, bicepService } from './api';
 export {
   listSubscriptions,
   listResourceGroups,
+  listManagementGroups,
   getArmAccessToken,
   type AzureSubscription,
   type AzureResourceGroup,
+  type AzureManagementGroup,
+  type ScopeRef,
 } from './azure-mgmt';
 export {
   loadOpenAISettings,

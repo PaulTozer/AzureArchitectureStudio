@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { AzureNode, AzureEdge, StencilModel, AzureNodeData, AzureServiceModel } from '../models';
 import { AdsConstants } from '../models';
-import type { AzureSubscription } from '../services';
+import type { AzureSubscription, ScopeRef } from '../services';
 
 interface DiagramState {
   nodes: AzureNode[];
@@ -32,9 +32,14 @@ interface AppContextType {
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
 
-  // Azure subscription (selected by user after sign-in)
+  // Azure subscription (selected by user after sign-in) — kept for
+  // backwards compatibility; prefer `selectedScope`.
   azureSubscription: AzureSubscription | null;
   setAzureSubscription: (sub: AzureSubscription | null) => void;
+
+  // Active deployment / browse scope: management group, subscription or resource group.
+  selectedScope: ScopeRef | null;
+  setSelectedScope: (scope: ScopeRef | null) => void;
 
   // Helpers
   addNode: (node: AzureNode) => void;
@@ -44,6 +49,7 @@ interface AppContextType {
 }
 
 const SUB_STORAGE_KEY = 'aas.subscription.v1';
+const SCOPE_STORAGE_KEY = 'aas.scope.v1';
 
 const AppContext = createContext<AppContextType | null>(null);
 
@@ -116,6 +122,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  const [selectedScope, setSelectedScopeState] = useState<ScopeRef | null>(() => {
+    try {
+      const raw = localStorage.getItem(SCOPE_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as ScopeRef) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const setAzureSubscription = useCallback((sub: AzureSubscription | null) => {
     setAzureSubscriptionState(sub);
     try {
@@ -123,6 +138,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       else localStorage.removeItem(SUB_STORAGE_KEY);
     } catch {
       // ignore
+    }
+  }, []);
+
+  const setSelectedScope = useCallback((scope: ScopeRef | null) => {
+    setSelectedScopeState(scope);
+    try {
+      if (scope) localStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify(scope));
+      else localStorage.removeItem(SCOPE_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    // Mirror to the legacy azureSubscription slot when a subscription scope is
+    // chosen (or a resource group, which is contained in one) so existing
+    // consumers keep working without changes.
+    if (scope?.kind === 'subscription') {
+      setAzureSubscriptionState({
+        id: scope.id,
+        subscriptionId: scope.subscriptionId,
+        displayName: scope.displayName,
+        state: 'Enabled',
+        tenantId: scope.tenantId,
+      });
+      try { localStorage.setItem(SUB_STORAGE_KEY, JSON.stringify({ id: scope.id, subscriptionId: scope.subscriptionId, displayName: scope.displayName, state: 'Enabled', tenantId: scope.tenantId })); } catch { /* ignore */ }
+    } else if (scope?.kind === 'resourceGroup') {
+      setAzureSubscriptionState({
+        id: `/subscriptions/${scope.subscriptionId}`,
+        subscriptionId: scope.subscriptionId,
+        displayName: scope.subscriptionName,
+        state: 'Enabled',
+        tenantId: '',
+      });
     }
   }, []);
 
@@ -217,6 +263,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSelectedNodeId,
         azureSubscription,
         setAzureSubscription,
+        selectedScope,
+        setSelectedScope,
         addNode,
         removeNode,
         updateNodeData,

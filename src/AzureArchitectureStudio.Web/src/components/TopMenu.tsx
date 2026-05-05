@@ -97,7 +97,11 @@ export default function TopMenu() {
       return;
     }
     try {
-      await instance.loginPopup(azureManagementRequest);
+      // Redirect-based login is more robust than popup — it sidesteps
+      // COOP / window.opener restrictions and always lands back on
+      // the SPA at window.location.origin (handled in main.tsx via
+      // handleRedirectPromise()).
+      await instance.loginRedirect(azureManagementRequest);
     } catch (err) {
       console.error('Login failed:', err);
       showToast('Sign-in failed.', 'error');
@@ -105,7 +109,7 @@ export default function TopMenu() {
   }, [instance, showToast]);
 
   const handleLogout = useCallback(async () => {
-    await instance.logoutPopup();
+    await instance.logoutRedirect();
   }, [instance]);
 
   // Generate ARM JSON from current diagram

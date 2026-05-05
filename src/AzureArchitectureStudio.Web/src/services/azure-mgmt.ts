@@ -16,6 +16,29 @@ export interface AzureResourceGroup {
   location: string;
 }
 
+export interface AzureManagementGroup {
+  id: string;            // /providers/Microsoft.Management/managementGroups/{name}
+  name: string;          // unique name (the "id" segment)
+  type: string;
+  properties: {
+    displayName: string;
+    tenantId?: string;
+  };
+}
+
+/** Discriminated union representing where a deployment / listing is scoped. */
+export type ScopeRef =
+  | { kind: 'managementGroup'; id: string; name: string; displayName: string }
+  | { kind: 'subscription'; id: string; subscriptionId: string; displayName: string; tenantId: string }
+  | {
+      kind: 'resourceGroup';
+      id: string;
+      name: string;
+      location: string;
+      subscriptionId: string;
+      subscriptionName: string;
+    };
+
 /** Acquire an ARM access token (silent, fall back to popup). */
 export async function getArmAccessToken(): Promise<string | null> {
   const accounts = msalInstance.getAllAccounts();
@@ -60,6 +83,18 @@ export async function listResourceGroups(
 ): Promise<AzureResourceGroup[]> {
   const data = await armFetch<{ value: AzureResourceGroup[] }>(
     `/subscriptions/${subscriptionId}/resourcegroups`,
+    '2021-04-01',
+  );
+  return data?.value ?? [];
+}
+
+/**
+ * List management groups visible to the signed-in user.
+ * Requires at least Reader on the MG; otherwise returns an empty list.
+ */
+export async function listManagementGroups(): Promise<AzureManagementGroup[]> {
+  const data = await armFetch<{ value: AzureManagementGroup[] }>(
+    '/providers/Microsoft.Management/managementGroups',
     '2021-04-01',
   );
   return data?.value ?? [];
