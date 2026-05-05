@@ -9,6 +9,7 @@ export interface DiagramNodeSnapshot {
   id: string;
   typeKey: string;
   name: string;
+  parentId?: string;
 }
 
 export interface DiagramEdgeSnapshot {
@@ -23,7 +24,7 @@ export interface AvailableService {
 }
 
 export type DiagramAction =
-  | { type: 'add_node'; id: string; typeKey: string; name: string; x?: number; y?: number }
+  | { type: 'add_node'; id: string; typeKey: string; name: string; x?: number; y?: number; parentId?: string }
   | { type: 'connect_nodes'; sourceId: string; targetId: string }
   | { type: 'remove_node'; id: string }
   | { type: 'clear_diagram' };
@@ -62,6 +63,7 @@ function normaliseAction(raw: Record<string, unknown>): DiagramAction | null {
         name: String(raw.name ?? ''),
         x: typeof raw.x === 'number' ? raw.x : undefined,
         y: typeof raw.y === 'number' ? raw.y : undefined,
+        parentId: typeof raw.parentId === 'string' && raw.parentId.length > 0 ? raw.parentId : undefined,
       };
     case 'connect_nodes':
       return {

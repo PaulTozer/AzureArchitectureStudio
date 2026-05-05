@@ -23,6 +23,8 @@ public class DiagramNodeSnapshot
     public string Id { get; set; } = string.Empty;
     public string TypeKey { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    /// <summary>Id of the containing group node, if any.</summary>
+    public string? ParentId { get; set; }
 }
 
 public class DiagramEdgeSnapshot
@@ -60,6 +62,8 @@ public class DiagramAction
     public double? Y { get; set; }
     public string? SourceId { get; set; }
     public string? TargetId { get; set; }
+    /// <summary>For add_node: id of the parent group node so the new node is placed inside it.</summary>
+    public string? ParentId { get; set; }
 }
 
 public class ChatResponse

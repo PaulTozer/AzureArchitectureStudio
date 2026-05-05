@@ -82,12 +82,13 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
     (actions: DiagramAction[]) => {
       if (actions.length === 0) return;
 
-      let placementCursor = nodes.length;
-      const placementOrigin = { x: 80, y: 80 };
-      const placementSpacing = 180;
-
       setNodes((prev) => {
         let next = [...prev];
+
+        // First pass: insert / remove / clear so the node set reflects the
+        // final state. Position only matters for nodes that ended up free
+        // (i.e. without a parent); everything inside a group will be laid out
+        // by the auto-layout pass below.
         for (const a of actions) {
           if (a.type === 'add_node') {
             const svc = azureServices.find((s) => s.key === a.typeKey);
@@ -95,14 +96,10 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             const grouped = isGroupType(a.typeKey);
             const groupDims = grouped ? getGroupStyle(a.typeKey) : undefined;
 
-            const x = a.x ?? placementOrigin.x + (placementCursor % 5) * placementSpacing;
-            const y = a.y ?? placementOrigin.y + Math.floor(placementCursor / 5) * placementSpacing;
-            placementCursor++;
-
             const node: AzureNode = {
               id: a.id,
               type: grouped ? 'azureGroup' : 'azureNode',
-              position: { x, y },
+              position: { x: a.x ?? 0, y: a.y ?? 0 },
               data: {
                 typeKey: a.typeKey,
                 imagePath: iconPath,
@@ -112,6 +109,12 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
                 isValid: true,
                 properties: getDefaultProperties(a.typeKey) ?? {},
               } satisfies AzureNodeData,
+              ...(a.parentId
+                ? {
+                    parentId: a.parentId,
+                    ...(grouped ? { extent: 'parent' as const } : {}),
+                  }
+                : {}),
               ...(groupDims ? { style: { width: groupDims.width, height: groupDims.height } } : {}),
             };
             next = [...next, node];
@@ -121,6 +124,17 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             next = [];
           }
         }
+
+        // Auto-layout: any node that was added or moved by the AI gets re-laid
+        // out so groups grow to fit their children and nothing overlaps.
+        // Existing user-placed leaves at the top level are left where they are;
+        // anything inside an AI-managed group is reflowed.
+        const touched = new Set<string>();
+        for (const a of actions) {
+          if (a.type === 'add_node') touched.add(a.id);
+        }
+        next = autoLayoutDiagram(next, touched, prev);
+
         return next;
       });
 
@@ -147,7 +161,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
         return next;
       });
     },
-    [nodes.length, azureServices, setNodes, setEdges]
+    [azureServices, setNodes, setEdges]
   );
 
   const send = useCallback(
@@ -178,6 +192,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             id: n.id,
             typeKey: (n.data as AzureNodeData).typeKey,
             name: (n.data as AzureNodeData).name,
+            parentId: (n as { parentId?: string }).parentId,
           })),
           edges: edges.map((e) => ({ source: e.source, target: e.target })),
           availableServices,
@@ -325,6 +340,189 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
       </DrawerBody>
     </OverlayDrawer>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-layout
+// ---------------------------------------------------------------------------
+
+// Visual constants — tuned to roughly match what AzureNode/AzureGroup render at.
+const LEAF_W = 120;
+const LEAF_H = 110;
+const GROUP_PAD_X = 24;
+const GROUP_PAD_TOP = 56; // header row inside a group
+const GROUP_PAD_BOTTOM = 24;
+const CHILD_GAP = 28;
+const TOP_LEVEL_GAP = 70;
+const TOP_LEVEL_ORIGIN = { x: 60, y: 60 };
+
+interface LayoutSize { width: number; height: number }
+
+/**
+ * Bottom-up auto-layout. For every group node we recompute child positions in
+ * a clean grid and resize the group to fit. Top-level (parent-less) nodes
+ * that the AI just touched are tiled left-to-right; untouched top-level
+ * nodes keep their existing absolute position so user-arranged content is
+ * not disturbed.
+ */
+function autoLayoutDiagram(
+  nodes: AzureNode[],
+  touched: Set<string>,
+  previous: AzureNode[],
+): AzureNode[] {
+  if (nodes.length === 0) return nodes;
+
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const childrenOf = new Map<string | undefined, AzureNode[]>();
+  for (const n of nodes) {
+    const pid = (n as { parentId?: string }).parentId;
+    const arr = childrenOf.get(pid) ?? [];
+    arr.push(n);
+    childrenOf.set(pid, arr);
+  }
+
+  const newSize = new Map<string, LayoutSize>();
+  const newRelPos = new Map<string, { x: number; y: number }>();
+
+  function measure(nodeId: string): LayoutSize {
+    const node = byId.get(nodeId)!;
+    const isGroup = node.type === 'azureGroup';
+    if (!isGroup) return { width: LEAF_W, height: LEAF_H };
+
+    const children = childrenOf.get(nodeId) ?? [];
+    if (children.length === 0) {
+      const fallback = getGroupStyle((node.data as AzureNodeData).typeKey)
+        ?? { width: 240, height: 140 };
+      newSize.set(nodeId, fallback);
+      return fallback;
+    }
+
+    // Measure each child first
+    const childSizes = children.map((c) => ({ id: c.id, size: measure(c.id) }));
+
+    // Pick a column count that keeps the group roughly square but capped at 5.
+    // Special-case Virtual Networks: lay subnets out as a single horizontal row
+    // (matches Microsoft reference architecture diagrams).
+    const myType = (node.data as AzureNodeData).typeKey;
+    const isVnet = myType === 'virtual-network';
+    const cols = isVnet
+      ? Math.max(1, children.length)
+      : Math.min(5, Math.max(1, Math.ceil(Math.sqrt(children.length))));
+    const rows = Math.ceil(children.length / cols);
+    const colWidths = new Array<number>(cols).fill(0);
+    const rowHeights = new Array<number>(rows).fill(0);
+    childSizes.forEach((c, i) => {
+      const r = Math.floor(i / cols);
+      const col = i % cols;
+      colWidths[col] = Math.max(colWidths[col], c.size.width);
+      rowHeights[r] = Math.max(rowHeights[r], c.size.height);
+    });
+
+    // Position children
+    let yCursor = GROUP_PAD_TOP;
+    for (let r = 0; r < rows; r++) {
+      let xCursor = GROUP_PAD_X;
+      for (let col = 0; col < cols; col++) {
+        const idx = r * cols + col;
+        if (idx >= childSizes.length) break;
+        const c = childSizes[idx];
+        const cellW = colWidths[col];
+        const cellH = rowHeights[r];
+        newRelPos.set(c.id, {
+          x: xCursor + (cellW - c.size.width) / 2,
+          y: yCursor + (cellH - c.size.height) / 2,
+        });
+        xCursor += cellW + CHILD_GAP;
+      }
+      yCursor += rowHeights[r] + CHILD_GAP;
+    }
+
+    const totalWidth = GROUP_PAD_X * 2
+      + colWidths.reduce((a, b) => a + b, 0)
+      + CHILD_GAP * (cols - 1);
+    const totalHeight = GROUP_PAD_BOTTOM + (yCursor - CHILD_GAP);
+    const size: LayoutSize = {
+      width: Math.max(totalWidth, 240),
+      height: Math.max(totalHeight, 120),
+    };
+    newSize.set(nodeId, size);
+    return size;
+  }
+
+  const tops = childrenOf.get(undefined) ?? [];
+  const topSizes = tops.map((n) => ({ id: n.id, size: measure(n.id), node: n }));
+
+  // Decide which top-level subtrees to repack
+  const touchedTopIds = new Set<string>();
+  for (const t of topSizes) {
+    if (subtreeIncludesTouched(t.id, childrenOf, touched)) touchedTopIds.add(t.id);
+  }
+
+  // Start the layout row below any untouched top-level content
+  let layoutOriginY = TOP_LEVEL_ORIGIN.y;
+  for (const t of topSizes) {
+    if (touchedTopIds.has(t.id)) continue;
+    const prevNode = previous.find((p) => p.id === t.id) ?? t.node;
+    const bottom = prevNode.position.y + t.size.height;
+    if (bottom + TOP_LEVEL_GAP > layoutOriginY) {
+      layoutOriginY = bottom + TOP_LEVEL_GAP;
+    }
+  }
+
+  // Tile touched top-level nodes left-to-right, wrapping at ~1400px wide.
+  const MAX_ROW_WIDTH = 1400;
+  let rowX = TOP_LEVEL_ORIGIN.x;
+  let rowY = layoutOriginY;
+  let rowMaxH = 0;
+  const newAbsPos = new Map<string, { x: number; y: number }>();
+  for (const t of topSizes) {
+    if (!touchedTopIds.has(t.id)) {
+      const prevNode = previous.find((p) => p.id === t.id) ?? t.node;
+      newAbsPos.set(t.id, prevNode.position);
+      continue;
+    }
+    if (rowX > TOP_LEVEL_ORIGIN.x && rowX + t.size.width > MAX_ROW_WIDTH) {
+      rowX = TOP_LEVEL_ORIGIN.x;
+      rowY += rowMaxH + TOP_LEVEL_GAP;
+      rowMaxH = 0;
+    }
+    newAbsPos.set(t.id, { x: rowX, y: rowY });
+    rowX += t.size.width + TOP_LEVEL_GAP;
+    rowMaxH = Math.max(rowMaxH, t.size.height);
+  }
+
+  return nodes.map((n) => {
+    const pid = (n as { parentId?: string }).parentId;
+    let position = n.position;
+    let style = n.style;
+
+    if (pid) {
+      const rel = newRelPos.get(n.id);
+      if (rel) position = rel;
+    } else {
+      const abs = newAbsPos.get(n.id);
+      if (abs) position = abs;
+    }
+
+    if (n.type === 'azureGroup') {
+      const sz = newSize.get(n.id);
+      if (sz) style = { ...style, width: sz.width, height: sz.height };
+    }
+
+    return { ...n, position, style };
+  });
+}
+
+function subtreeIncludesTouched(
+  nodeId: string,
+  childrenOf: Map<string | undefined, AzureNode[]>,
+  touched: Set<string>,
+): boolean {
+  if (touched.has(nodeId)) return true;
+  for (const c of childrenOf.get(nodeId) ?? []) {
+    if (subtreeIncludesTouched(c.id, childrenOf, touched)) return true;
+  }
+  return false;
 }
 
 function summariseActions(actions: DiagramAction[]): string | undefined {
