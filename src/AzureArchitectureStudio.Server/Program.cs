@@ -36,6 +36,13 @@ builder.Services.AddSingleton<ICryptoService, CryptoService>();
 
 builder.Services.AddHttpClient();
 
+// AI chat assistant (Azure OpenAI + Microsoft Learn MCP)
+builder.Services.AddSingleton<IMicrosoftLearnMcpClient, MicrosoftLearnMcpClient>();
+builder.Services.AddSingleton<IChatService, AzureOpenAIChatService>();
+
+// Bicep decompiler (ARM → Bicep) used by /api/bicep/decompile
+builder.Services.AddAdsBicepDecompiler();
+
 builder.Services.AddSingleton<ITelemetryInitializer, AdsTelemetryInitializer>();
 builder.Services.AddApplicationInsightsTelemetry();
 

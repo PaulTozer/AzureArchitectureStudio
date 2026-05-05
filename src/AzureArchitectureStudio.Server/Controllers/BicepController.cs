@@ -1,4 +1,4 @@
-using AzureArchitectureStudio.Services;
+using AzureArchitectureStudio.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AzureArchitectureStudio.Server.Controllers;

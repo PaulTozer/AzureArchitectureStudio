@@ -10,7 +10,6 @@ using Azure.ResourceManager;
 using Azure.ResourceManager.Resources;
 using Azure;
 using Azure.ResourceManager.Resources.Models;
-using Azure.Deployments.Core.Definitions;
 
 namespace AzureArchitectureStudio.Server.Services
 {

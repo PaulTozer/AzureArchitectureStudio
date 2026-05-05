@@ -34,6 +34,8 @@ import {
   DeleteRegular,
   SignOutRegular,
   DocumentAddRegular,
+  SparkleRegular,
+  SettingsRegular,
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
@@ -46,6 +48,8 @@ import {
 import { toPng } from 'html-to-image';
 import CodeDrawer from './drawers/CodeDrawer';
 import SaveDrawer from './drawers/SaveDrawer';
+import ChatDrawer from './drawers/ChatDrawer';
+import SettingsDialog from './dialogs/SettingsDialog';
 import SubscriptionPicker from './SubscriptionPicker';
 import './TopMenu.css';
 
@@ -62,6 +66,8 @@ export default function TopMenu() {
     content: string;
   } | null>(null);
   const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imgPreview, setImgPreview] = useState<string | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -227,6 +233,22 @@ export default function TopMenu() {
             Save / Load
           </ToolbarButton>
 
+          {/* AI Assistant */}
+          <ToolbarButton
+            icon={<SparkleRegular />}
+            onClick={() => setChatDrawerOpen(true)}
+          >
+            AI Assistant
+          </ToolbarButton>
+
+          {/* Settings */}
+          <ToolbarButton
+            icon={<SettingsRegular />}
+            onClick={() => setSettingsDialogOpen(true)}
+            title="Settings"
+            aria-label="Settings"
+          />
+
           <ToolbarDivider />
 
           {/* Azure subscription picker (visible after sign-in) */}
@@ -288,6 +310,19 @@ export default function TopMenu() {
           onClose={() => setSaveDrawerOpen(false)}
         />
       )}
+
+      {/* AI chat drawer */}
+      <ChatDrawer
+        open={chatDrawerOpen}
+        onClose={() => setChatDrawerOpen(false)}
+        onOpenSettings={() => setSettingsDialogOpen(true)}
+      />
+
+      {/* Settings dialog */}
+      <SettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+      />
 
       {/* New diagram confirmation */}
       <Dialog
