@@ -56,6 +56,7 @@ import NodeEditDrawer from '../drawers/NodeEditDrawer';
 import { useSubnetSync } from '../../hooks/useSubnetSync';
 import { useBindingSync, cornerPosition, nextCorner } from '../../hooks/useBindingSync';
 import { useDependencyValidationSync } from '../../hooks/useDependencyValidationSync';
+import { useEdgeRouting } from '../../hooks/useEdgeRouting';
 import type { AzureNodeData as AzureNodeDataType, BindingCorner } from '../../models';
 import './DiagramPanel.css';
 
@@ -96,6 +97,10 @@ export default function DiagramPanel() {
 
   // Recompute node validity from required-dependency fulfilment
   useDependencyValidationSync(nodes, edges, setNodes);
+
+  // Pick the shortest available handle pair for each edge so connections
+  // don't loop around nodes when a closer side is available.
+  useEdgeRouting(nodes, edges, setEdges);
 
   // Ensure every edge uses our custom deletable renderer so the × button
   // shows on saved / imported edges as well as new ones.

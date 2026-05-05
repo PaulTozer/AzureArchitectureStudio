@@ -186,15 +186,23 @@ export function getDefaultProperties(key: string): Record<string, unknown> {
 /**
  * Look up a resource type definition, falling back to dynamic ARM schema
  * resolution when no curated definition exists.
+ *
+ * For curated definitions that DO exist we still attempt to enrich them
+ * by fetching the full ARM schema and merging in any properties the
+ * curated schema didn't already cover. The curated entries always win
+ * on conflicts (for label/select-options/etc.), but extra fields from the
+ * ARM spec get surfaced under an "Advanced" group.
  */
 export async function getResourceTypeAsync(
   key: string,
   displayName?: string,
 ): Promise<ResourceTypeDefinition | undefined> {
   const k = resolveKey(key);
-  // 1. Curated definition wins
+  // 1. Curated definition wins — but try to enrich it once with ARM schema.
   const curated = registry.get(k);
-  if (curated) return curated;
+  if (curated) {
+    return enrichCuratedAsync(k, curated);
+  }
 
   // 2. Previously resolved dynamic definition (only cache real ARM resolutions)
   const cached = dynamicRegistry.get(k);
@@ -234,6 +242,89 @@ export async function getResourceTypeAsync(
       { key: 'tags', label: 'Tags', type: 'string', placeholder: 'Comma-separated key:value pairs' },
     ],
   };
+}
+
+/** Cache of curated-definitions already enriched with ARM-schema fields. */
+const enrichedRegistry: Map<string, ResourceTypeDefinition> = new Map();
+
+async function enrichCuratedAsync(
+  k: string,
+  curated: ResourceTypeDefinition,
+): Promise<ResourceTypeDefinition> {
+  const cached = enrichedRegistry.get(k);
+  if (cached) return cached;
+
+  // Nothing to fetch if the curated entry has no armType.
+  if (!curated.armType) {
+    enrichedRegistry.set(k, curated);
+    return curated;
+  }
+
+  let extras: PropertyField[] = [];
+  try {
+    extras = await fetchArmPropertySchema(curated.armType);
+  } catch {
+    extras = [];
+  }
+
+  // Skip any field already present on the curated schema (by key).
+  const existingKeys = new Set(curated.propertySchema.map((f) => f.key));
+  const missing = extras.filter((f) => !existingKeys.has(f.key));
+
+  // Strip generic ARM noise that's never user-editable in our context.
+  const NOISE = new Set([
+    'provisioningState',
+    'state',
+    'fullyQualifiedDomainName',
+    'privateEndpointConnections',
+    'kind',
+    'currentSku',
+    'restorableDroppedDatabaseId',
+    'sourceDatabaseId',
+    'sourceDatabaseDeletionDate',
+    'recoveryServicesRecoveryPointId',
+    'longTermRetentionBackupResourceId',
+    'recoverableDatabaseId',
+    'restorePointInTime',
+    'createMode',
+    'currentBackupStorageRedundancy',
+    'requestedServiceObjectiveName',
+    'currentServiceObjectiveName',
+    'serviceLevelObjective',
+    'edition',
+    'managedBy',
+    'creationDate',
+    'earliestRestoreDate',
+    'databaseId',
+    'currentBackupStorageRedundancyName',
+    'paused',
+    'resumedDate',
+    'pausedDate',
+    'creationTime',
+  ]);
+  const filtered = missing.filter((f) => !NOISE.has(f.key));
+
+  if (filtered.length === 0) {
+    enrichedRegistry.set(k, curated);
+    return curated;
+  }
+
+  // Wrap the extras in an "Advanced (from ARM spec)" object group so users
+  // can collapse them without distracting from the curated essentials.
+  const enriched: ResourceTypeDefinition = {
+    ...curated,
+    propertySchema: [
+      ...curated.propertySchema,
+      {
+        key: '__armSpecAdvanced__',
+        label: 'Advanced (from ARM spec)',
+        type: 'object',
+        children: filtered,
+      },
+    ],
+  };
+  enrichedRegistry.set(k, enriched);
+  return enriched;
 }
 
 /**

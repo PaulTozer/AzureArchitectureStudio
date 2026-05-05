@@ -16,6 +16,13 @@ export {
   type OpenAISettings,
 } from './openai-settings';
 export {
+  loadDiagramSettings,
+  saveDiagramSettings,
+  defaultDiagramSettings,
+  type DiagramSettings,
+  type EdgeStyle,
+} from './diagram-settings';
+export {
   chatService,
   type ChatTurn,
   type ChatRequest,

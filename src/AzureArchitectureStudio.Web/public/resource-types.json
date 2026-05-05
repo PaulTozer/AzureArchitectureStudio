@@ -941,6 +941,15 @@
         "required": true
       },
       {
+        "key": "version",
+        "label": "Server Version",
+        "type": "select",
+        "defaultValue": "12.0",
+        "options": [
+          { "label": "12.0", "value": "12.0" }
+        ]
+      },
+      {
         "key": "minimalTlsVersion",
         "label": "Minimum TLS Version",
         "type": "select",
@@ -977,18 +986,92 @@
         ]
       },
       {
+        "key": "restrictOutboundNetworkAccess",
+        "label": "Restrict Outbound Network Access",
+        "type": "radio",
+        "defaultValue": "Disabled",
+        "options": [
+          { "label": "Enabled", "value": "Enabled" },
+          { "label": "Disabled", "value": "Disabled" }
+        ]
+      },
+      {
         "key": "enableAadAuth",
         "label": "Microsoft Entra ID Authentication",
         "type": "boolean",
         "defaultValue": false
+      },
+      {
+        "key": "aadAdminLogin",
+        "label": "Entra ID Admin Login",
+        "type": "string",
+        "placeholder": "sqladmins@contoso.com"
+      },
+      {
+        "key": "aadAdminObjectId",
+        "label": "Entra ID Admin Object ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "aadOnlyAuthentication",
+        "label": "Entra ID Authentication Only (disable SQL auth)",
+        "type": "boolean",
+        "defaultValue": false
+      },
+      {
+        "key": "identityType",
+        "label": "Managed Identity",
+        "type": "select",
+        "defaultValue": "None",
+        "options": [
+          { "label": "None", "value": "None" },
+          { "label": "System assigned", "value": "SystemAssigned" },
+          { "label": "User assigned", "value": "UserAssigned" },
+          { "label": "System + User assigned", "value": "SystemAssigned,UserAssigned" }
+        ]
+      },
+      {
+        "key": "primaryUserAssignedIdentityId",
+        "label": "Primary User-Assigned Identity (resourceId)",
+        "type": "string",
+        "placeholder": "/subscriptions/.../userAssignedIdentities/<name>"
+      },
+      {
+        "key": "keyId",
+        "label": "TDE Customer-Managed Key URI",
+        "type": "string",
+        "placeholder": "https://<vault>.vault.azure.net/keys/<key>/<version>"
+      },
+      {
+        "key": "federatedClientId",
+        "label": "Federated Client ID (cross-tenant CMK)",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "administratorsTenantId",
+        "label": "Entra ID Admin Tenant ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
       }
     ],
     "armMapping": {
       "propertyMappings": {
         "adminLogin": "properties.administratorLogin",
         "adminPassword": "properties.administratorLoginPassword",
+        "version": "properties.version",
         "minimalTlsVersion": "properties.minimalTlsVersion",
-        "publicNetworkAccess": "properties.publicNetworkAccess"
+        "publicNetworkAccess": "properties.publicNetworkAccess",
+        "restrictOutboundNetworkAccess": "properties.restrictOutboundNetworkAccess",
+        "aadAdminLogin": "properties.administrators.login",
+        "aadAdminObjectId": "properties.administrators.sid",
+        "administratorsTenantId": "properties.administrators.tenantId",
+        "aadOnlyAuthentication": "properties.administrators.azureADOnlyAuthentication",
+        "identityType": "identity.type",
+        "primaryUserAssignedIdentityId": "properties.primaryUserAssignedIdentityId",
+        "keyId": "properties.keyId",
+        "federatedClientId": "properties.federatedClientId"
       },
       "parameters": [
         {

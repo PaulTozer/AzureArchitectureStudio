@@ -93,7 +93,9 @@ public class AzureOpenAIChatService : IChatService
 
                 foreach (var call in completion.ToolCalls)
                 {
+                    _logger.LogWarning("Tool call: {Function} args={Args}", call.FunctionName, call.FunctionArguments.ToString());
                     var (toolResult, action, extraActions) = await HandleToolCallAsync(call, request, ct);
+                    _logger.LogWarning("Tool result: {Result}", toolResult);
                     if (extraActions != null)
                     {
                         foreach (var extra in extraActions) actions.Add(extra);
@@ -124,6 +126,25 @@ public class AzureOpenAIChatService : IChatService
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+
+    // The catalog uses both singular and plural forms (e.g. 'virtual-networks',
+    // 'resource-groups', 'private-endpoints' but 'subnet', 'sql-server', 'sql-database').
+    // This helper makes guard checks robust to either spelling.
+    private static bool IsType(string? typeKey, params string[] aliases)
+    {
+        if (string.IsNullOrEmpty(typeKey)) return false;
+        foreach (var a in aliases)
+        {
+            if (string.Equals(typeKey, a, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private static bool IsResourceGroup(string? t) => IsType(t, "resource-group", "resource-groups");
+    private static bool IsVirtualNetwork(string? t) => IsType(t, "virtual-network", "virtual-networks");
+    private static bool IsSubnet(string? t) => IsType(t, "subnet", "subnets");
+    private static bool IsPrivateEndpoint(string? t) => IsType(t, "private-endpoint", "private-endpoints");
+    private static bool IsPrivateDnsZone(string? t) => IsType(t, "private-dns-zone", "private-dns-zones", "dns-zone", "dns-zones");
 
     private static string BuildSystemPrompt(ChatRequest request)
     {
@@ -164,13 +185,12 @@ Before you finish, every resource on the canvas must have everything it needs to
 - **Resource Group**: every Azure resource lives in one. If the diagram has none, add a `resource-group` node first and (mentally) place subsequent resources inside it. If the user adds new resources, add a resource group if not already present.
 - **Private Endpoint** (`private-endpoint`): a private endpoint is a real node on the canvas, NOT just a DNS zone. Whenever the user asks for "private endpoints" / "private connectivity" / "private link" for any PaaS service (SQL, Storage, Key Vault, Cosmos, App Service, etc.), do EXACTLY this in the same turn:
     1. Make sure a `virtual-network` exists under the resource group (reuse if already there).
-    2. For EACH PaaS service being privatised, call `add_node` with `typeKey="private-endpoint"`, a sensible name (e.g. `pe-sql`, `pe-storage-blob`, `pe-keyvault`), and `parentId` set to the **virtual-network's id**. **DO NOT pass a subnet id.** The server will automatically create a dedicated `snet-private-endpoints` subnet under the VNet on the first call and reuse it for the rest. Do not pre-create the subnet yourself.
+    2. For EACH PaaS service being privatised, call `add_node` with `typeKey="private-endpoints"`, a sensible name (e.g. `pe-sql`, `pe-storage-blob`, `pe-keyvault`), and `parentId` set to the **virtual-network's id**. **DO NOT pass a subnet id.** The server will automatically create a dedicated `snet-private-endpoints` subnet under the VNet on the first call and reuse it for the rest. Do not pre-create the subnet yourself.
     3. For each PaaS service type, add a `private-dns-zone` node parented to the resource-group (NOT the VNet/subnet). Standard names: `privatelink.database.windows.net` (SQL), `privatelink.blob.core.windows.net` (Blob), `privatelink.vaultcore.azure.net` (Key Vault), `privatelink.documents.azure.com` (Cosmos).
-    4. Wire it up — call `connect_nodes` THREE times per PaaS service:
+    4. Wire it up — call `connect_nodes` TWICE per PaaS service:
         - `connect_nodes(<paas service id>, <private-endpoint id>)`
-        - `connect_nodes(<private-endpoint id>, <private-dns-zone id>)`
-        - `connect_nodes(<private-dns-zone id>, <virtual-network id>)`
-   The diagram is incomplete unless every PaaS service that should be private has its own `private-endpoint` node AND the three connections above. Do NOT skip step 2.
+        - `connect_nodes(<private-dns-zone id>, <virtual-network id>)`  ← the DNS vnet-link. Do NOT also connect the private endpoint to the DNS zone — the zone-group association is implied by them sharing the same `privatelink.*` zone, and a second edge just clutters the diagram.
+   The diagram is incomplete unless every PaaS service that should be private has its own `private-endpoint` node AND the two connections above. Do NOT skip step 2.
 - **Virtual Machine**: requires a `virtual-network`, a `subnet`, a `network-interface` (NIC), and typically a `network-security-group`. For inbound public access, add a `public-ip` and either a `bastion` or a `load-balancer` / `application-gateway` rather than RDP/SSH from the internet.
 - **AKS / App Service with VNet integration**: needs a delegated `subnet`.
 - **Application Gateway / Azure Firewall / Bastion**: each requires its OWN dedicated subnet inside the VNet (`AzureFirewallSubnet`, `AzureBastionSubnet`, etc.).
@@ -301,10 +321,9 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     // resource group in a single-app diagram. If the model tries
                     // to create a second one, hand back the existing id so the
                     // resource is nested inside it instead.
-                    if (string.Equals(typeKey, "resource-group", StringComparison.OrdinalIgnoreCase))
+                    if (IsResourceGroup(typeKey))
                     {
-                        var existingRg = request.Nodes.FirstOrDefault(x =>
-                            string.Equals(x.TypeKey, "resource-group", StringComparison.OrdinalIgnoreCase));
+                        var existingRg = request.Nodes.FirstOrDefault(x => IsResourceGroup(x.TypeKey));
                         if (existingRg != null)
                         {
                             return (
@@ -322,10 +341,10 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     // Virtual-network singleton per resource group. The model has been
                     // observed to create a second VNet in a follow-up turn instead of
                     // adding subnets to the existing one. Reuse it.
-                    if (string.Equals(typeKey, "virtual-network", StringComparison.OrdinalIgnoreCase))
+                    if (IsVirtualNetwork(typeKey))
                     {
                         var existingVnet = request.Nodes.FirstOrDefault(x =>
-                            string.Equals(x.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase)
+                            IsVirtualNetwork(x.TypeKey)
                             && (string.IsNullOrEmpty(parentIdEarly) || x.ParentId == parentIdEarly));
                         if (existingVnet != null)
                         {
@@ -363,14 +382,14 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     // Containment-shape guards: subnets MUST live inside a virtual-network
                     // (never inside another subnet). Auto-correct by walking up to the
                     // nearest virtual-network ancestor.
-                    if (string.Equals(typeKey, "subnet", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(parentId))
+                    if (IsSubnet(typeKey) && !string.IsNullOrEmpty(parentId))
                     {
                         var parent = request.Nodes.FirstOrDefault(p => p.Id == parentId);
-                        if (parent != null && !string.Equals(parent.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase))
+                        if (parent != null && !IsVirtualNetwork(parent.TypeKey))
                         {
                             // Walk up looking for a VNet
                             var cursor = parent;
-                            while (cursor != null && !string.Equals(cursor.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase))
+                            while (cursor != null && !IsVirtualNetwork(cursor.TypeKey))
                             {
                                 cursor = string.IsNullOrEmpty(cursor.ParentId)
                                     ? null
@@ -392,7 +411,7 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     // even if it passed nothing), find/create a 'snet-private-endpoints'
                     // subnet under the diagram's VNet and force the PE there.
                     var extras = new List<DiagramAction>();
-                    if (string.Equals(typeKey, "private-endpoint", StringComparison.OrdinalIgnoreCase))
+                    if (IsPrivateEndpoint(typeKey))
                     {
                         // Locate a VNet to host this PE.
                         DiagramNodeSnapshot? targetVnet = null;
@@ -402,30 +421,29 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                             var parentNode = request.Nodes.FirstOrDefault(p => p.Id == parentId);
                             if (parentNode != null)
                             {
-                                if (string.Equals(parentNode.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase))
+                                if (IsVirtualNetwork(parentNode.TypeKey))
                                 {
                                     targetVnet = parentNode;
                                 }
-                                else if (string.Equals(parentNode.TypeKey, "subnet", StringComparison.OrdinalIgnoreCase))
+                                else if (IsSubnet(parentNode.TypeKey))
                                 {
                                     targetVnet = string.IsNullOrEmpty(parentNode.ParentId)
                                         ? null
                                         : request.Nodes.FirstOrDefault(p => p.Id == parentNode.ParentId
-                                            && string.Equals(p.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase));
+                                            && IsVirtualNetwork(p.TypeKey));
                                 }
                             }
                         }
 
                         // Fall back to ANY VNet in the diagram.
-                        targetVnet ??= request.Nodes.FirstOrDefault(p =>
-                            string.Equals(p.TypeKey, "virtual-network", StringComparison.OrdinalIgnoreCase));
+                        targetVnet ??= request.Nodes.FirstOrDefault(p => IsVirtualNetwork(p.TypeKey));
 
                         if (targetVnet != null)
                         {
                             // Reuse an existing dedicated PE subnet under this VNet, or create one.
                             var existingPeSubnet = request.Nodes.FirstOrDefault(p =>
                             {
-                                if (!string.Equals(p.TypeKey, "subnet", StringComparison.OrdinalIgnoreCase)) return false;
+                                if (!IsSubnet(p.TypeKey)) return false;
                                 if (p.ParentId != targetVnet.Id) return false;
                                 var nm = (p.Name ?? "").ToLowerInvariant();
                                 return nm.Contains("private-endpoint")
@@ -484,6 +502,28 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     var tgt = args.RootElement.TryGetProperty("targetId", out var t) ? t.GetString() ?? "" : "";
                     if (string.IsNullOrWhiteSpace(src) || string.IsNullOrWhiteSpace(tgt))
                         return ("Missing sourceId or targetId.", null, null);
+
+                    // Suppress redundant Private Endpoint ↔ Private DNS Zone edges:
+                    // the zone-group association is implied by the matching `privatelink.*`
+                    // zone, so an extra arrow only clutters the diagram.
+                    var srcNode = request.Nodes.FirstOrDefault(n => n.Id == src);
+                    var tgtNode = request.Nodes.FirstOrDefault(n => n.Id == tgt);
+                    if (srcNode is not null && tgtNode is not null)
+                    {
+                        var pair1 = IsPrivateEndpoint(srcNode.TypeKey) && IsPrivateDnsZone(tgtNode.TypeKey);
+                        var pair2 = IsPrivateDnsZone(srcNode.TypeKey) && IsPrivateEndpoint(tgtNode.TypeKey);
+                        if (pair1 || pair2)
+                        {
+                            _logger.LogWarning("Suppressing redundant private-endpoint ↔ private-dns-zone edge {Src} -> {Tgt}", src, tgt);
+                            return ("skipped: private-endpoint ↔ private-dns-zone edge is redundant; the zone-group binding is implied. Connect the DNS zone to the virtual-network instead.", null, null);
+                        }
+                    }
+
+                    // Drop exact-duplicate edges
+                    if (request.Edges.Any(e => e.Source == src && e.Target == tgt))
+                    {
+                        return ("skipped: edge already exists", null, null);
+                    }
 
                     request.Edges.Add(new DiagramEdgeSnapshot { Source = src, Target = tgt });
                     return ("ok", new DiagramAction { Type = "connect_nodes", SourceId = src, TargetId = tgt }, null);

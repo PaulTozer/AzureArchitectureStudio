@@ -12,6 +12,9 @@ import {
   Link,
   MessageBar,
   MessageBarBody,
+  Dropdown,
+  Option,
+  Divider,
 } from '@fluentui/react-components';
 import { EyeRegular, EyeOffRegular } from '@fluentui/react-icons';
 import {
@@ -19,7 +22,12 @@ import {
   saveOpenAISettings,
   clearOpenAISettings,
   emptyOpenAISettings,
+  loadDiagramSettings,
+  saveDiagramSettings,
+  defaultDiagramSettings,
   type OpenAISettings,
+  type DiagramSettings,
+  type EdgeStyle,
 } from '../../services';
 
 interface SettingsDialogProps {
@@ -27,13 +35,22 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
+const EDGE_STYLE_OPTIONS: { value: EdgeStyle; label: string; description: string }[] = [
+  { value: 'smoothstep', label: 'Smooth Step', description: 'Right-angle path with rounded corners (recommended)' },
+  { value: 'step', label: 'Step', description: 'Right-angle path with sharp corners' },
+  { value: 'bezier', label: 'Bezier', description: 'Curved path' },
+  { value: 'straight', label: 'Straight', description: 'Direct line between handles' },
+];
+
 export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [settings, setSettings] = useState<OpenAISettings>(emptyOpenAISettings);
+  const [diagramSettings, setDiagramSettings] = useState<DiagramSettings>(defaultDiagramSettings);
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     if (open) {
       setSettings(loadOpenAISettings());
+      setDiagramSettings(loadDiagramSettings());
       setShowKey(false);
     }
   }, [open]);
@@ -43,6 +60,7 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
   const handleSave = () => {
     saveOpenAISettings(settings);
+    saveDiagramSettings(diagramSettings);
     onClose();
   };
 
@@ -51,12 +69,40 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setSettings(emptyOpenAISettings);
   };
 
+  const currentEdge = EDGE_STYLE_OPTIONS.find((o) => o.value === diagramSettings.edgeStyle)
+    ?? EDGE_STYLE_OPTIONS[0];
+
   return (
     <Dialog open={open} onOpenChange={(_, d) => { if (!d.open) onClose(); }}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
-          <DialogTitle>AI Assistant Settings</DialogTitle>
+          <DialogTitle>Settings</DialogTitle>
           <DialogContent>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600 }}>Diagram</h3>
+            <Field
+              label="Connection line style"
+              hint={currentEdge.description}
+              style={{ marginBottom: 16 }}
+            >
+              <Dropdown
+                value={currentEdge.label}
+                selectedOptions={[diagramSettings.edgeStyle]}
+                onOptionSelect={(_, d) => {
+                  const v = (d.optionValue ?? 'smoothstep') as EdgeStyle;
+                  setDiagramSettings({ ...diagramSettings, edgeStyle: v });
+                }}
+              >
+                {EDGE_STYLE_OPTIONS.map((o) => (
+                  <Option key={o.value} value={o.value} text={o.label}>
+                    {o.label}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
+
+            <Divider style={{ margin: '8px 0 16px 0' }} />
+
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600 }}>AI Assistant</h3>
             <MessageBar intent="info" style={{ marginBottom: 12 }}>
               <MessageBarBody>
                 Credentials are stored only in this browser (localStorage) and are
@@ -106,7 +152,7 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={handleClear}>
-              Clear
+              Clear AI creds
             </Button>
             <Button appearance="secondary" onClick={onClose}>
               Cancel

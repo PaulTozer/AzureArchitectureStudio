@@ -101,8 +101,16 @@ export function useSubnetSync(
         const data = vnet.data as AzureNodeData;
         const subnets = (data.properties?.subnets as SubnetEntry[] | undefined) ?? [];
 
-        const vnetWidth = vnet.measured?.width ?? vnet.width ?? 250;
-        const vnetHeight = vnet.measured?.height ?? vnet.height ?? 200;
+        const vnetWidth =
+          vnet.measured?.width
+          ?? (typeof vnet.style?.width === 'number' ? vnet.style.width : undefined)
+          ?? vnet.width
+          ?? 250;
+        const vnetHeight =
+          vnet.measured?.height
+          ?? (typeof vnet.style?.height === 'number' ? vnet.style.height : undefined)
+          ?? vnet.height
+          ?? 200;
         const headerHeight = 32;
         const padding = 12;
         const subnetCount = subnets.length;
