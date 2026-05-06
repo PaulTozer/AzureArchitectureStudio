@@ -58,6 +58,7 @@ import { useBindingSync, cornerPosition, nextCorner } from '../../hooks/useBindi
 import { useDependencyValidationSync } from '../../hooks/useDependencyValidationSync';
 import { useEdgeRouting } from '../../hooks/useEdgeRouting';
 import type { AzureNodeData as AzureNodeDataType, BindingCorner } from '../../models';
+import { checkConnection } from '../../utils/connection-rules';
 import './DiagramPanel.css';
 
 const nodeTypes: NodeTypes = {
@@ -123,11 +124,55 @@ export default function DiagramPanel() {
     [setEdges]
   );
 
+  // Lookup the resource typeKey for a node id from the latest nodes ref.
+  const getNodeTypeKey = useCallback(
+    (nodeId: string | null | undefined): string | undefined => {
+      if (!nodeId) return undefined;
+      const list = (reactFlowInstance.current?.getNodes() as AzureNode[] | undefined) ?? nodes;
+      const found = list.find((n) => n.id === nodeId);
+      return (found?.data as AzureNodeData | undefined)?.typeKey;
+    },
+    [nodes]
+  );
+
+  const validateConnection = useCallback(
+    (conn: Connection | Edge) => {
+      const sourceType = getNodeTypeKey(conn.source ?? null);
+      const targetType = getNodeTypeKey(conn.target ?? null);
+      return checkConnection(sourceType, targetType);
+    },
+    [getNodeTypeKey]
+  );
+
+  // Lightweight notification: dispatches a window event that a host (e.g.
+  // TopMenu's Toaster) can listen for. Falls back to console only.
+  const notify = useCallback((message: string) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('aas:notify', { detail: { message, intent: 'warning' } }),
+      );
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
+  const isValidConnectionFn = useCallback(
+    (conn: Edge | Connection) => validateConnection(conn).allowed,
+    [validateConnection]
+  );
+
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
       // eslint-disable-next-line no-console
       console.log('[DiagramPanel] onConnect fired', connection);
       if (connection.source === connection.target) return;
+      const check = validateConnection(connection);
+      if (!check.allowed) {
+        // eslint-disable-next-line no-console
+        console.warn('[DiagramPanel] connection blocked:', check.reason);
+        notify(check.reason ?? 'Connection not allowed.');
+        return;
+      }
       setEdges((eds) =>
         addEdge(
           {
@@ -140,7 +185,7 @@ export default function DiagramPanel() {
         )
       );
     },
-    [setEdges]
+    [setEdges, validateConnection, notify]
   );
 
   // Track whether an ongoing reconnect actually dropped onto a valid target.
@@ -154,10 +199,17 @@ export default function DiagramPanel() {
   const onReconnect = useCallback(
     (oldEdge: Edge, newConnection: Connection) => {
       if (newConnection.source === newConnection.target) return;
+      const check = validateConnection(newConnection);
+      if (!check.allowed) {
+        // eslint-disable-next-line no-console
+        console.warn('[DiagramPanel] reconnect blocked:', check.reason);
+        notify(check.reason ?? 'Connection not allowed.');
+        return;
+      }
       edgeReconnectSuccessful.current = true;
       setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
     },
-    [setEdges]
+    [setEdges, validateConnection, notify]
   );
 
   const onReconnectEnd = useCallback(
@@ -558,6 +610,7 @@ export default function DiagramPanel() {
         onReconnect={onReconnect}
         onReconnectStart={onReconnectStart}
         onReconnectEnd={onReconnectEnd}
+        isValidConnection={isValidConnectionFn}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onNodeClick={onNodeClick}

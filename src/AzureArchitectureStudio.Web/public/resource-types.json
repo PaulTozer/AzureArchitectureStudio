@@ -1,5 +1,32 @@
 [
   {
+    "key": "entra-tenant",
+    "displayName": "Microsoft Entra Tenant",
+    "armType": "Microsoft.AzureActiveDirectory/tenants",
+    "apiVersion": "2023-05-17",
+    "propertySchema": [
+      {
+        "key": "tenantId",
+        "label": "Tenant ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Contoso"
+      },
+      {
+        "key": "primaryDomain",
+        "label": "Primary Domain",
+        "type": "string",
+        "placeholder": "contoso.onmicrosoft.com"
+      }
+    ],
+    "armMapping": {}
+  },
+  {
     "key": "management-groups",
     "displayName": "Management Group",
     "armType": "Microsoft.Management/managementGroups",

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Toolbar,
   ToolbarButton,
@@ -87,6 +87,17 @@ export default function TopMenu() {
     },
     [dispatchToast]
   );
+
+  // Listen for global notification events (e.g. blocked diagram connections).
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ message?: string; intent?: 'success' | 'error' | 'warning' | 'info' }>).detail;
+      if (!detail?.message) return;
+      showToast(detail.message, detail.intent ?? 'info');
+    };
+    window.addEventListener('aas:notify', handler);
+    return () => window.removeEventListener('aas:notify', handler);
+  }, [showToast]);
 
   const handleLogin = useCallback(async () => {
     if (!isAuthConfigured) {

@@ -1620,6 +1620,12 @@
     "iconPath": "assets/azure-icons/identity/10225-icon-service-Enterprise-Applications.svg"
   },
   {
+    "key": "entra-tenant",
+    "name": "Microsoft Entra Tenant",
+    "category": "Identity",
+    "iconPath": "assets/azure-icons/identity/02854-icon-service-Entra-Connect.svg"
+  },
+  {
     "key": "entra-connect",
     "name": "Entra Connect",
     "category": "Identity",
