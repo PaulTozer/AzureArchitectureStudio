@@ -346,6 +346,56 @@ public class AzureOpenAIChatService : IChatService
                 }
             }
 
+            // 2.5) one-hop indirect via an intermediary type. e.g. a VM's
+            // subnet dep accepts a network-interface as wrapper: if the VM
+            // is connected to a NIC, and the NIC is in a subnet (or wired
+            // to one), the dep is satisfied.
+            if (matched == null && dep.AcceptVia.Count > 0)
+            {
+                foreach (var inter in request.Nodes)
+                {
+                    if (!connectedIds.Contains(inter.Id)) continue;
+                    if (!dep.AcceptVia.Any(t => IsType(inter.TypeKey, t))) continue;
+
+                    // Intermediate's parent matches targetType?
+                    if (!string.IsNullOrEmpty(inter.ParentId))
+                    {
+                        var ip = request.Nodes.FirstOrDefault(n =>
+                            string.Equals(n.Id, inter.ParentId, StringComparison.OrdinalIgnoreCase));
+                        if (ip != null && IsType(ip.TypeKey, dep.TargetType))
+                        {
+                            matched = ip;
+                            source = "edge";
+                            break;
+                        }
+                    }
+
+                    // Or intermediate is edge-connected to a node of targetType?
+                    DiagramNodeSnapshot? viaEdge = null;
+                    foreach (var e in request.Edges)
+                    {
+                        var otherId =
+                            string.Equals(e.Source, inter.Id, StringComparison.OrdinalIgnoreCase) ? e.Target :
+                            string.Equals(e.Target, inter.Id, StringComparison.OrdinalIgnoreCase) ? e.Source :
+                            null;
+                        if (otherId == null) continue;
+                        var other = request.Nodes.FirstOrDefault(n =>
+                            string.Equals(n.Id, otherId, StringComparison.OrdinalIgnoreCase));
+                        if (other != null && IsType(other.TypeKey, dep.TargetType))
+                        {
+                            viaEdge = other;
+                            break;
+                        }
+                    }
+                    if (viaEdge != null)
+                    {
+                        matched = viaEdge;
+                        source = "edge";
+                        break;
+                    }
+                }
+            }
+
             // 3) requiredName check on parent/edge match
             if (matched != null && dep.RequiredName.Count > 0)
             {
@@ -466,6 +516,7 @@ Common dependency wiring patterns:
 - `vpn-gateway` / `expressroute-gateway` → lives in a subnet named exactly `GatewaySubnet`, needs a `public-ip`.
 - `application-gateways` / `app-gateway` → needs a `public-ip` (connect_nodes), lives in its own dedicated subnet.
 - `private-endpoint` → lives in a subnet, must be wired to a target resource (the thing it fronts) AND a `private-dns-zone` for the matching `privatelink.*` zone (connect the DNS zone to the VNet, NOT directly to the PE — the server will reject PE↔zone edges).
+- `network-security-groups` (NSG) and `route-tables` → these are decorations associated with a single subnet (or VNet). Put them with `parentId = <the subnet's id>` rather than the resource group. The UI will render them pinned to the subnet's bottom-left corner. Connect with `connect_nodes(nsg, subnet)` to make the association explicit; alternatively use `connect_nodes(nsg, vnet)` for a VNet-scoped NSG.
 - `kubernetes-services` (AKS) → put in a subnet, optional public IP for ingress.
 - `web-app` / `function-app` (Standard plan) → parentId = `appservice-plan`.
 - `sql-database` / `cosmos-db-database` / etc. → parentId = matching server.

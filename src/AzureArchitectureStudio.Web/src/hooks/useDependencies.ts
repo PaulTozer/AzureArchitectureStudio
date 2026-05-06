@@ -100,6 +100,53 @@ export function evaluateDependencies(
       }
     }
 
+    // 3.5 Indirect satisfaction via an intermediary type. e.g. a VM's
+    // subnet dep accepts a network-interface as a one-hop wrapper: if
+    // the VM is connected to a NIC, and the NIC is in a subnet (or
+    // wired to one), the VM's subnet dep is considered satisfied.
+    if (!fulfilled && dep.acceptVia && dep.acceptVia.length > 0) {
+      const connectedIds = new Set<string>();
+      for (const e of edges) {
+        if (e.source === node.id) connectedIds.add(e.target);
+        if (e.target === node.id) connectedIds.add(e.source);
+      }
+      for (const intermediate of allNodes) {
+        if (!connectedIds.has(intermediate.id)) continue;
+        const matchesIntermediate = dep.acceptVia.some((t) => matchesType(intermediate, t));
+        if (!matchesIntermediate) continue;
+
+        // Intermediate's parent matches targetType?
+        const ipid = (intermediate as { parentId?: string }).parentId;
+        if (ipid) {
+          const ip = allNodes.find((n) => n.id === ipid);
+          if (ip && matchesType(ip, dep.targetType)) {
+            fulfilled = true;
+            source = 'edge';
+            resolvedNodeId = ip.id;
+            break;
+          }
+        }
+
+        // Or intermediate is edge-connected to a node of targetType?
+        let foundEdge = false;
+        for (const e of edges) {
+          const otherId = e.source === intermediate.id
+            ? e.target
+            : e.target === intermediate.id ? e.source : null;
+          if (!otherId) continue;
+          const other = allNodes.find((n) => n.id === otherId);
+          if (other && matchesType(other, dep.targetType)) {
+            fulfilled = true;
+            source = 'edge';
+            resolvedNodeId = other.id;
+            foundEdge = true;
+            break;
+          }
+        }
+        if (foundEdge) break;
+      }
+    }
+
     // 4. Validate required name on the resolved target (parent/edge only).
     if (fulfilled && dep.requiredName && resolvedNodeId) {
       const resolved = allNodes.find((n) => n.id === resolvedNodeId);

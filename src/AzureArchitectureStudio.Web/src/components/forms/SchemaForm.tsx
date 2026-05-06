@@ -13,8 +13,15 @@ import {
 import { AddRegular, DeleteRegular, ChevronDownRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import type { PropertyField } from '../../models/resource-registry';
+import { regionOptions } from '../../models/azure-regions';
 import AzurePickerField from './AzurePickerField';
 import { dbg } from '../../utils/debug';
+
+/** Resolve a field's effective select options, honouring `optionsSource`. */
+function resolveOptions(field: PropertyField): { label: string; value: string }[] {
+  if (field.optionsSource === 'azureRegions') return regionOptions();
+  return field.options ?? [];
+}
 
 interface SchemaFormProps {
   schema: PropertyField[];
@@ -31,7 +38,7 @@ interface SchemaFormProps {
 export default function SchemaForm({ schema, properties, onChange, onMultiChange }: SchemaFormProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-      {schema.map((field) => {
+      {schema.map((field, index) => {
         // Conditional visibility
         if (field.visibleWhen) {
           const dep = properties[field.visibleWhen.field];
@@ -42,10 +49,11 @@ export default function SchemaForm({ schema, properties, onChange, onMultiChange
 
         return (
           <SchemaField
-            key={field.key}
+            key={`${field.key}-${index}`}
             field={field}
             value={properties[field.key] ?? field.defaultValue}
             properties={properties}
+            schema={schema}
             onChange={onChange}
             onMultiChange={onMultiChange}
           />
@@ -59,11 +67,14 @@ interface SchemaFieldProps {
   field: PropertyField;
   value: unknown;
   properties: Record<string, unknown>;
+  /** Sibling fields. Used by cascading selects (resetFields) to look up
+   *  the default value of the field that becomes visible after the change. */
+  schema?: PropertyField[];
   onChange: (key: string, value: unknown) => void;
   onMultiChange?: (updates: Record<string, unknown>) => void;
 }
 
-function SchemaField({ field, value, onChange, onMultiChange }: SchemaFieldProps) {
+function SchemaField({ field, value, schema, onChange, onMultiChange }: SchemaFieldProps) {
   switch (field.type) {
     case 'string':
     case 'password':
@@ -110,15 +121,43 @@ function SchemaField({ field, value, onChange, onMultiChange }: SchemaFieldProps
         </Field>
       );
 
-    case 'select':
+    case 'select': {
+      const options = resolveOptions(field);
       return (
         <Field label={field.label} required={field.required}>
           <Dropdown
-            value={field.options?.find((o) => o.value === value)?.label ?? ''}
-            onOptionSelect={(_, d) => onChange(field.key, d.optionValue)}
+            value={options.find((o) => o.value === value)?.label ?? ''}
+            onOptionSelect={(_, d) => {
+              const newValue = d.optionValue;
+              // Cascading reset: when this select changes, reset sibling
+              // fields named in resetFields to the default of whichever
+              // schema entry becomes visible under the new value.
+              if (
+                field.resetFields &&
+                field.resetFields.length > 0 &&
+                schema &&
+                onMultiChange
+              ) {
+                const updates: Record<string, unknown> = { [field.key]: newValue };
+                for (const resetKey of field.resetFields) {
+                  const target = schema.find((f) => {
+                    if (f.key !== resetKey) return false;
+                    if (!f.visibleWhen || f.visibleWhen.field !== field.key) return false;
+                    const expected = f.visibleWhen.value;
+                    return Array.isArray(expected)
+                      ? expected.includes(newValue as string)
+                      : expected === newValue;
+                  });
+                  updates[resetKey] = target?.defaultValue;
+                }
+                onMultiChange(updates);
+              } else {
+                onChange(field.key, newValue);
+              }
+            }}
             size="small"
           >
-            {(field.options ?? []).map((opt) => (
+            {options.map((opt) => (
               <Option key={opt.value} value={opt.value}>
                 {opt.label}
               </Option>
@@ -126,6 +165,7 @@ function SchemaField({ field, value, onChange, onMultiChange }: SchemaFieldProps
           </Dropdown>
         </Field>
       );
+    }
 
     case 'radio':
       return (

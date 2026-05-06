@@ -63,6 +63,13 @@ public class ServiceDependency
     public string? Hint { get; set; }
     /// <summary>One or more exact names the resolved target must have (e.g. "AzureBastionSubnet").</summary>
     public List<string> RequiredName { get; set; } = new();
+    /// <summary>
+    /// One-hop intermediary type keys that "wrap" <see cref="TargetType"/>.
+    /// Lets a Virtual Machine's subnet dep be satisfied via a network-interface,
+    /// for example, when the VM is connected to a NIC and the NIC sits in a
+    /// subnet.
+    /// </summary>
+    public List<string> AcceptVia { get; set; } = new();
 }
 
 public class ChatRequest

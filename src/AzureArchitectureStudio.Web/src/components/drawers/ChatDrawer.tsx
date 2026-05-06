@@ -106,6 +106,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
         requiredName: d.requiredName
           ? Array.isArray(d.requiredName) ? d.requiredName : [d.requiredName]
           : [],
+        acceptVia: d.acceptVia ?? [],
       }));
       return { key: s.key, name: s.name, category: s.category, dependencies: deps };
     }),
@@ -299,6 +300,67 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             touched.add(translate(a.id) ?? a.id);
           }
         }
+
+        // NSGs and route tables are decorations: re-parent them onto the
+        // subnet (or VNet) they protect and pin them to the bottom-left
+        // corner so they look the same as ARM Import. We discover the
+        // attachment by looking at the chat's connect_nodes actions —
+        // wherever the AI wired the NSG to a subnet/vnet, that becomes
+        // the new parent.
+        const nsgAttachments = new Map<string, string>();
+        for (const a of actions) {
+          if (a.type !== 'connect_nodes') continue;
+          const sId = translate(a.sourceId) ?? a.sourceId;
+          const tId = translate(a.targetId) ?? a.targetId;
+          const sNode = next.find((n) => n.id === sId);
+          const tNode = next.find((n) => n.id === tId);
+          if (!sNode || !tNode) continue;
+          const sType = (sNode.data as AzureNodeData).typeKey;
+          const tType = (tNode.data as AzureNodeData).typeKey;
+          const isDec = (k: string) =>
+            k === 'nsg' || k === 'network-security-groups' || k === 'network-security-group'
+            || k === 'route-table' || k === 'route-tables';
+          const isHost = (k: string) =>
+            k === 'subnet' || k === 'subnets'
+            || k === 'virtual-network' || k === 'virtual-networks';
+          if (isDec(sType) && isHost(tType)) nsgAttachments.set(sNode.id, tNode.id);
+          else if (isDec(tType) && isHost(sType)) nsgAttachments.set(tNode.id, sNode.id);
+        }
+
+        next = next.map((n) => {
+          const data = n.data as AzureNodeData;
+          const tk = data.typeKey;
+          const isDec = tk === 'nsg' || tk === 'network-security-groups' || tk === 'network-security-group'
+            || tk === 'route-table' || tk === 'route-tables';
+          if (!isDec) return n;
+          const newParent = nsgAttachments.get(n.id) ?? (n as { parentId?: string }).parentId;
+          const alreadyPinned = !!data.binding?.corner;
+          if (!newParent) return n;
+
+          // Decide whether the chosen parent is a valid binding host.
+          // - A real node in `next` that is a subnet or VNet, OR
+          // - A synthetic subnet id (e.g. `<vnetId>__subnet__N`) which the
+          //   useSubnetSync hook will materialise on the next render. We
+          //   detect that pattern by id rather than by node lookup, since
+          //   the node doesn't exist in `next` yet.
+          const isSyntheticSubnet = newParent.includes('__subnet__');
+          const parentNode = next.find((p) => p.id === newParent);
+          const parentType = parentNode ? (parentNode.data as AzureNodeData).typeKey : undefined;
+          const realIsHost = parentType === 'subnet' || parentType === 'subnets'
+            || parentType === 'virtual-network' || parentType === 'virtual-networks';
+          if (!isSyntheticSubnet && !realIsHost) return n;
+
+          const updated: AzureNode = {
+            ...n,
+            parentId: newParent,
+            extent: 'parent' as const,
+            data: alreadyPinned
+              ? data
+              : { ...data, binding: { corner: 'bottom-left' } },
+          };
+          return updated;
+        });
+
         next = autoLayoutDiagram(next, touched, prev);
 
         return next;

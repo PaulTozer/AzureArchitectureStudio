@@ -131,6 +131,15 @@ export function getArmResourcesForNode(
     }
   }
 
+  // Universal location override: any resource may set properties.location
+  // to a literal region (e.g. "eastus2") which overrides the
+  // deployment-wide [parameters('location')] default. Resource groups use
+  // the same field for their own canonical location.
+  const locOverride = properties.location;
+  if (typeof locOverride === 'string' && locOverride.trim() !== '') {
+    armResource.location = locOverride.trim();
+  }
+
   const parameters: Record<string, Parameter> = {};
 
   // Emit declared parameters

@@ -12,6 +12,8 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  Dropdown,
+  Option,
 } from '@fluentui/react-components';
 import { DismissRegular, WarningRegular } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
@@ -20,6 +22,7 @@ import { getResourceType, getResourceTypeAsync, getDisplayName } from '../../mod
 import type { ResourceTypeDefinition } from '../../models';
 import { evaluateDependencies } from '../../hooks/useDependencies';
 import { parseSubnetNodeId } from '../../hooks/useSubnetSync';
+import { regionOptions } from '../../models/azure-regions';
 import SchemaForm from '../forms/SchemaForm';
 import { dbg } from '../../utils/debug';
 
@@ -152,6 +155,78 @@ export default function NodeEditDrawer({
             size="small"
           />
         </Field>
+
+        {/* Location override — shown for every Azure resource except
+            containers that don't carry a location of their own (resource
+            group has its own dedicated Region field, subscriptions and
+            management groups have none). Subnet children inherit from
+            their VNet so we hide it for them too. */}
+        {(() => {
+          const tk = data.typeKey;
+          const noLocationTypes = new Set([
+            'resource-group',
+            'subscriptions',
+            'management-groups',
+          ]);
+          if (noLocationTypes.has(tk)) return null;
+          if (subnetRef) return null;
+
+          // Walk up parentId to find the enclosing resource group's region
+          // so we can show it as the inherited default in the placeholder.
+          let inherited: string | undefined;
+          let cursor: AzureNode | undefined = node;
+          const byId = new Map(nodes.map((n) => [n.id, n] as const));
+          while (cursor && cursor.parentId) {
+            const p = byId.get(cursor.parentId);
+            if (!p) break;
+            const pData = p.data as AzureNodeData | undefined;
+            if (pData?.typeKey === 'resource-group') {
+              const loc = pData?.properties?.location as string | undefined;
+              if (loc) inherited = loc;
+              break;
+            }
+            cursor = p as AzureNode;
+          }
+
+          const opts = regionOptions();
+          const current = (data.properties?.location as string | undefined) ?? '';
+          const currentLabel = current
+            ? opts.find((o) => o.value === current)?.label ?? current
+            : '';
+          return (
+            <Field
+              label="Location"
+              hint={
+                current
+                  ? 'Overrides the resource group region.'
+                  : inherited
+                    ? `Inherits from resource group (${inherited}).`
+                    : 'Inherits from resource group.'
+              }
+            >
+              <Dropdown
+                value={currentLabel}
+                placeholder={
+                  inherited
+                    ? `Inherit from resource group (${inherited})`
+                    : 'Inherit from resource group'
+                }
+                onOptionSelect={(_, d) => {
+                  // Empty value clears the override (back to inheritance).
+                  handlePropertyChange('location', d.optionValue || undefined);
+                }}
+                size="small"
+              >
+                <Option value="">— Inherit from resource group —</Option>
+                {opts.map((o) => (
+                  <Option key={o.value} value={o.value}>
+                    {o.label}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
+          );
+        })()}
 
         {/* Resource-specific properties — driven by registry schema */}
         {loading ? (

@@ -34,6 +34,8 @@ export interface ServiceDependency {
   hint?: string;
   /** Always sent as an array (never undefined) — server expects List<string>. */
   requiredName?: string[];
+  /** One-hop intermediary types that satisfy the dep. */
+  acceptVia?: string[];
 }
 
 export type DiagramAction =

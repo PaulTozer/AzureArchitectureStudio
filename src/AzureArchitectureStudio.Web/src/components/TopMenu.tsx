@@ -137,6 +137,22 @@ export default function TopMenu() {
 
     const template = createArmTemplate();
 
+    // Pre-pass: if any resource group node has an explicit location, use
+    // it as the default value of the deployment-wide `location` parameter
+    // so child resources without their own override inherit a sensible
+    // region. Falls back to [resourceGroup().location] if none is set.
+    const rgLocation = nodes
+      .map((n) => {
+        const d = n.data as AzureNodeData;
+        if (d.typeKey !== 'resource-group') return undefined;
+        const loc = d.properties?.location;
+        return typeof loc === 'string' && loc.trim() !== '' ? loc.trim() : undefined;
+      })
+      .find((x): x is string => Boolean(x));
+    if (rgLocation && template.parameters.location) {
+      template.parameters.location.defaultValue = rgLocation;
+    }
+
     for (const node of nodes) {
       const data = node.data as AzureNodeData;
       const { resources, parameters } = getArmResourcesForNode(

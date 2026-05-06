@@ -14,11 +14,24 @@ export interface PropertyField {
   type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker';
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
+  /**
+   * For 'select' fields. Names a shared option list defined in code
+   * (e.g. 'azureRegions') instead of inlining the options in JSON. The
+   * resolver lives in `SchemaForm`.
+   */
+  optionsSource?: 'azureRegions';
   placeholder?: string;
   required?: boolean;
   /** Schema for items in a simple string array */
   itemSchema?: PropertyField;
   visibleWhen?: { field: string; value: string | string[] };
+  /**
+   * For cascading selects: when this field's value changes, also reset these
+   * sibling fields. The new value of each reset field is the `defaultValue` of
+   * whichever schema field with that key is visible under the new value of
+   * this field (i.e. its `visibleWhen` matches), or `undefined` if none match.
+   */
+  resetFields?: string[];
   /** Child fields for 'object' and 'object-array' types */
   children?: PropertyField[];
   /**
@@ -60,6 +73,17 @@ export interface ResourceDependencyDef {
   hint?: string;
   /** Optional exact name(s) the resolved target must have (case-sensitive). Used for Azure-mandated names like AzureBastionSubnet. */
   requiredName?: string | string[];
+  /**
+   * Optional list of intermediary type keys that "wrap" the targetType.
+   * If the dep can't be matched directly, the validator follows one hop to
+   * a node of one of these types and treats the dep as fulfilled when that
+   * intermediary itself sits inside / is connected to a node of targetType.
+   *
+   * Example: a Virtual Machine's `subnet` dep accepts `network-interface`
+   * via this path — if the VM is wired to a NIC and the NIC is in a
+   * subnet, the VM's subnet dep is considered satisfied.
+   */
+  acceptVia?: string[];
 }
 
 export interface ResourceTypeDefinition {
