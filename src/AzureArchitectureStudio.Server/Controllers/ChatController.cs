@@ -98,9 +98,16 @@ public class ChatController : ControllerBase
             catch (OperationCanceledException) { /* client gone */ }
         }, CancellationToken.None);
 
-        var progress = new Progress<ChatProgressEvent>(evt =>
+        // NB: do NOT use `new Progress<T>(...)` here — that posts callbacks
+        // to the captured SynchronizationContext (the ThreadPool in ASP.NET
+        // Core), which means progress.Report() returns BEFORE the callback
+        // runs. The chat method then completes, we call channel.Writer.
+        // TryComplete(), the pump drains, and the queued "done" callback
+        // races to a closed channel and silently TryWrite-fails. Use a
+        // direct synchronous IProgress instead so every event is enqueued
+        // before Report() returns.
+        var progress = new SyncProgress<ChatProgressEvent>(evt =>
         {
-            // Synchronous: just enqueue. The pump task does the actual writes.
             channel.Writer.TryWrite(evt);
         });
 
@@ -128,4 +135,22 @@ public class ChatController : ControllerBase
             try { await pump; } catch { /* swallow — already responded */ }
         }
     }
+}
+
+/// <summary>
+/// Synchronous IProgress implementation. Unlike <see cref="Progress{T}"/>,
+/// the callback runs inline on the calling thread instead of being posted
+/// to a SynchronizationContext, so the caller can rely on every reported
+/// value being delivered before <c>Report</c> returns.
+/// </summary>
+internal sealed class SyncProgress<T> : IProgress<T>
+{
+    private readonly Action<T> _handler;
+
+    public SyncProgress(Action<T> handler)
+    {
+        _handler = handler;
+    }
+
+    public void Report(T value) => _handler(value);
 }
