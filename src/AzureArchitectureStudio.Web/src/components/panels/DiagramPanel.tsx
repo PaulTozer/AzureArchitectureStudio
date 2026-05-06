@@ -59,6 +59,7 @@ import { useDependencyValidationSync } from '../../hooks/useDependencyValidation
 import { useEdgeRouting } from '../../hooks/useEdgeRouting';
 import type { AzureNodeData as AzureNodeDataType, BindingCorner } from '../../models';
 import { checkConnection } from '../../utils/connection-rules';
+import { refitAncestors, refitGroupsBottomUp } from '../../utils/refit-groups';
 import './DiagramPanel.css';
 
 const nodeTypes: NodeTypes = {
@@ -538,8 +539,11 @@ export default function DiagramPanel() {
       setNodes((nds) => {
         const dragged = nds.find((n) => n.id === node.id) as AzureNode | undefined;
         if (!dragged) return nds;
-        // Subnet group children (auto-managed) should not be re-parented
-        if (dragged.id.includes('__subnet__')) return nds;
+        // Subnet group children (auto-managed) should not be re-parented;
+        // we still refit so the parent group tightens around the move.
+        if (dragged.id.includes('__subnet__')) {
+          return refitAncestors(nds, dragged.parentId);
+        }
 
         // Compute absolute positions for hit-testing
         const absPos = new Map<string, { x: number; y: number }>();
@@ -567,7 +571,7 @@ export default function DiagramPanel() {
           const ap = absPos.get(n.id)!;
           return cx >= ap.x && cx <= ap.x + w && cy >= ap.y && cy <= ap.y + h;
         });
-        if (candidates.length === 0) return nds;
+        if (candidates.length === 0) return refitAncestors(nds, dragged.parentId);
         const newParent = candidates.reduce((smallest, g) => {
           const sA = (smallest.measured?.width ?? 0) * (smallest.measured?.height ?? 0);
           const gA = (g.measured?.width ?? 0) * (g.measured?.height ?? 0);
@@ -577,12 +581,12 @@ export default function DiagramPanel() {
         // Don't re-parent into our own descendant
         let p: AzureNode | undefined = newParent;
         while (p) {
-          if (p.id === dragged.id) return nds;
+          if (p.id === dragged.id) return refitAncestors(nds, dragged.parentId);
           p = p.parentId ? (nds.find((x) => x.id === p!.parentId) as AzureNode | undefined) : undefined;
         }
 
         // No-op if the smallest containing group is still the current parent
-        if (newParent.id === dragged.parentId) return nds;
+        if (newParent.id === dragged.parentId) return refitAncestors(nds, dragged.parentId);
 
         const newParentAbs = absPos.get(newParent.id)!;
         const reparented = nds.map((n) => {
@@ -605,7 +609,22 @@ export default function DiagramPanel() {
           };
         });
         // Maintain React Flow v12 invariant: parents must appear before children.
-        return topoSortNodes(reparented);
+        const sorted = topoSortNodes(reparented);
+        // Shrink-wrap every group from the new parent up to the root, plus
+        // the original parent. Bottom-up so outer groups see correct
+        // child sizes.
+        const affected = new Set<string>();
+        const collectAncestors = (startId: string | undefined) => {
+          let pid = startId;
+          while (pid) {
+            affected.add(pid);
+            const p = sorted.find((n) => n.id === pid);
+            pid = p?.parentId;
+          }
+        };
+        collectAncestors(dragged.parentId);
+        collectAncestors(newParent.id);
+        return refitGroupsBottomUp(sorted, affected);
       });
     },
     [setNodes],
