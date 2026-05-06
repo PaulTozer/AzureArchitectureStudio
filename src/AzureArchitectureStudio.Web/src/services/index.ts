@@ -36,6 +36,7 @@ export {
   type ChatTurn,
   type ChatRequest,
   type ChatResponse,
+  type ChatProgressEvent,
   type DiagramAction,
   type DiagramNodeSnapshot,
   type DiagramEdgeSnapshot,

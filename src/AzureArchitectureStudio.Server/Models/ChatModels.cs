@@ -38,6 +38,31 @@ public class AvailableService
     public string Key { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Required and optional dependencies for this resource type. The server
+    /// uses this to evaluate whether a freshly-added node is missing any
+    /// required references (e.g. a Private Endpoint needs a subnet + a
+    /// Private DNS Zone) and surfaces that back to the model so it can fix
+    /// it up in the next tool call.
+    /// </summary>
+    public List<ServiceDependency> Dependencies { get; set; } = new();
+}
+
+/// <summary>
+/// Mirror of the client-side <c>ResourceDependencyDef</c>. Tells the chat
+/// service what other resources a given type expects to be wired up to.
+/// </summary>
+public class ServiceDependency
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public bool Required { get; set; }
+    public bool AutoFromParent { get; set; }
+    public string? Hint { get; set; }
+    /// <summary>One or more exact names the resolved target must have (e.g. "AzureBastionSubnet").</summary>
+    public List<string> RequiredName { get; set; } = new();
 }
 
 public class ChatRequest
@@ -72,4 +97,39 @@ public class ChatResponse
     public List<DiagramAction> Actions { get; set; } = new();
     public bool Success { get; set; }
     public string? Error { get; set; }
+}
+
+/// <summary>
+/// A progress event emitted during a streaming chat session. The client
+/// renders these in the "thinking" indicator so the user can see what
+/// the model is doing in real time (which tool it's calling, what came
+/// back, etc.) instead of staring at a spinner.
+/// </summary>
+public class ChatProgressEvent
+{
+    /// <summary>
+    /// One of:
+    ///   "thinking"      — model is starting a new reasoning round.
+    ///   "tool_call"     — a tool is being invoked.
+    ///   "tool_result"   — the tool returned (Detail = short result string).
+    ///   "docs_search"   — Microsoft Learn search summary.
+    ///   "info"          — generic informational message.
+    ///   "assistant"     — final assistant text reply (Detail = the message).
+    ///   "action"        — a diagram action that should be applied (Action populated).
+    ///   "done"          — final event; carries the full message + actions in case the
+    ///                     client wants to confirm via the standard ChatResponse shape.
+    /// </summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>Short headline shown in the activity log (e.g. "Adding management group").</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Optional secondary detail (tool args, result snippet, etc.).</summary>
+    public string? Detail { get; set; }
+
+    /// <summary>Populated when Kind == "action".</summary>
+    public DiagramAction? Action { get; set; }
+
+    /// <summary>Populated when Kind == "done".</summary>
+    public ChatResponse? Final { get; set; }
 }

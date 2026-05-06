@@ -10,6 +10,17 @@ namespace AzureArchitectureStudio.Server.Services;
 public interface IChatService
 {
     Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Streaming variant — invokes <paramref name="progress"/> for every
+    /// interesting event (tool call, tool result, assistant text, etc.)
+    /// and returns the same final ChatResponse the non-streaming overload
+    /// would have produced.
+    /// </summary>
+    Task<ChatResponse> ChatAsync(
+        ChatRequest request,
+        IProgress<ChatProgressEvent>? progress,
+        CancellationToken ct = default);
 }
 
 public class AzureOpenAIChatService : IChatService
@@ -25,7 +36,13 @@ public class AzureOpenAIChatService : IChatService
         _logger = logger;
     }
 
-    public async Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
+    public Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
+        => ChatAsync(request, progress: null, ct);
+
+    public async Task<ChatResponse> ChatAsync(
+        ChatRequest request,
+        IProgress<ChatProgressEvent>? progress,
+        CancellationToken ct = default)
     {
         var endpoint = FirstNonEmpty(request.Settings?.Endpoint, _config["AzureOpenAI:Endpoint"]);
         var deployment = FirstNonEmpty(request.Settings?.Deployment, _config["AzureOpenAI:Deployment"]);
@@ -33,12 +50,14 @@ public class AzureOpenAIChatService : IChatService
 
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(deployment) || string.IsNullOrWhiteSpace(apiKey))
         {
-            return new ChatResponse
+            var unconfigured = new ChatResponse
             {
                 Success = false,
                 Error = "Azure OpenAI is not configured. Click the settings icon and supply Endpoint, Deployment, and API key.",
                 Message = "Please configure Azure OpenAI in Settings before chatting.",
             };
+            progress?.Report(new ChatProgressEvent { Kind = "done", Final = unconfigured });
+            return unconfigured;
         }
 
         ChatClient chatClient;
@@ -50,7 +69,9 @@ public class AzureOpenAIChatService : IChatService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to construct Azure OpenAI client");
-            return new ChatResponse { Success = false, Message = "Failed to connect to Azure OpenAI.", Error = ex.Message };
+            var fail = new ChatResponse { Success = false, Message = "Failed to connect to Azure OpenAI.", Error = ex.Message };
+            progress?.Report(new ChatProgressEvent { Kind = "done", Final = fail });
+            return fail;
         }
 
         // Build the conversation
@@ -72,18 +93,41 @@ public class AzureOpenAIChatService : IChatService
 
         var actions = new List<DiagramAction>();
 
-        // Tool-calling loop (cap iterations to avoid runaway)
-        for (var step = 0; step < 8; step++)
+        // Tool-calling loop. Cap is generous because complex prompts
+        // ("build me an Azure landing zone") need many rounds: docs
+        // searches, then top-level mgmt-groups, then subscriptions, then
+        // platform RGs, then per-RG resources. The model also hands
+        // control back between layers so it can re-read the snapshot,
+        // which costs an iteration each time. 40 is enough headroom for
+        // a full CAF landing-zone build without risking runaway.
+        const int MaxIterations = 40;
+        var hitCap = false;
+        for (var step = 0; step < MaxIterations; step++)
         {
+            // On the final iteration, force the model to wrap up rather
+            // than emit more tool calls (which we'd silently drop).
+            if (step == MaxIterations - 1)
+            {
+                options.ToolChoice = ChatToolChoice.CreateNoneChoice();
+                hitCap = true;
+            }
+
             ChatCompletion completion;
             try
             {
+                progress?.Report(new ChatProgressEvent
+                {
+                    Kind = "thinking",
+                    Title = step == 0 ? "Thinking…" : $"Reasoning (round {step + 1})…",
+                });
                 completion = await chatClient.CompleteChatAsync(messages, options, ct);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Azure OpenAI request failed");
-                return new ChatResponse { Success = false, Message = "Azure OpenAI request failed.", Error = ex.Message };
+                var fail = new ChatResponse { Success = false, Message = "Azure OpenAI request failed.", Error = ex.Message };
+                progress?.Report(new ChatProgressEvent { Kind = "done", Final = fail });
+                return fail;
             }
 
             if (completion.FinishReason == ChatFinishReason.ToolCalls && completion.ToolCalls.Count > 0)
@@ -94,34 +138,78 @@ public class AzureOpenAIChatService : IChatService
                 foreach (var call in completion.ToolCalls)
                 {
                     _logger.LogWarning("Tool call: {Function} args={Args}", call.FunctionName, call.FunctionArguments.ToString());
+                    progress?.Report(new ChatProgressEvent
+                    {
+                        Kind = "tool_call",
+                        Title = SummariseToolCall(call),
+                        Detail = call.FunctionArguments.ToString(),
+                    });
+
                     var (toolResult, action, extraActions) = await HandleToolCallAsync(call, request, ct);
                     _logger.LogWarning("Tool result: {Result}", toolResult);
+                    progress?.Report(new ChatProgressEvent
+                    {
+                        Kind = "tool_result",
+                        Detail = toolResult,
+                    });
+
                     if (extraActions != null)
                     {
-                        foreach (var extra in extraActions) actions.Add(extra);
+                        foreach (var extra in extraActions)
+                        {
+                            actions.Add(extra);
+                            progress?.Report(new ChatProgressEvent { Kind = "action", Action = extra });
+                        }
                     }
-                    if (action != null) actions.Add(action);
+                    if (action != null)
+                    {
+                        actions.Add(action);
+                        progress?.Report(new ChatProgressEvent { Kind = "action", Action = action });
+                    }
                     messages.Add(new ToolChatMessage(call.Id, toolResult));
                 }
+
+                // After a few rounds without explicit progress, nudge the
+                // model to keep building rather than stop early. We add a
+                // short user-role hint reminding it of the iteration
+                // budget so it knows it has space to finish multi-tier
+                // designs.
+                if (step > 0 && step % 8 == 0)
+                {
+                    var remaining = MaxIterations - step - 1;
+                    messages.Add(new UserChatMessage(
+                        $"(System note: ~{remaining} tool-calling rounds remain. " +
+                        "If your design is incomplete — e.g. management groups exist but no subscriptions, or subscriptions exist but no resource groups, or resource groups exist with no resources inside them — keep adding the missing layers in this turn before replying.")
+                    );
+                }
+
                 continue;
             }
 
             // Normal text completion — done
             var text = completion.Content.Count > 0 ? completion.Content[0].Text : string.Empty;
-            return new ChatResponse
+            var ok = new ChatResponse
             {
                 Success = true,
                 Message = text,
                 Actions = actions,
             };
+            progress?.Report(new ChatProgressEvent { Kind = "assistant", Detail = text });
+            progress?.Report(new ChatProgressEvent { Kind = "done", Final = ok });
+            return ok;
         }
 
-        return new ChatResponse
+        var capped = new ChatResponse
         {
             Success = true,
-            Message = "I've made the requested changes. Let me know what to do next.",
+            Message = hitCap
+                ? "I've placed the resources I had time to build in this turn. The diagram may be incomplete — ask me to continue and I'll keep adding the remaining layers."
+                : "I've made the requested changes. Let me know what to do next.",
             Actions = actions,
         };
+        progress?.Report(new ChatProgressEvent { Kind = "assistant", Detail = capped.Message });
+        progress?.Report(new ChatProgressEvent { Kind = "done", Final = capped });
+        return capped;
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -145,6 +233,155 @@ public class AzureOpenAIChatService : IChatService
     private static bool IsSubnet(string? t) => IsType(t, "subnet", "subnets");
     private static bool IsPrivateEndpoint(string? t) => IsType(t, "private-endpoint", "private-endpoints");
     private static bool IsPrivateDnsZone(string? t) => IsType(t, "private-dns-zone", "private-dns-zones", "dns-zone", "dns-zones");
+
+    /// <summary>
+    /// Build a short, human-readable headline for a tool call so the UI
+    /// can render something like "Adding management group 'Platform'…"
+    /// in the live activity log.
+    /// </summary>
+    private static string SummariseToolCall(ChatToolCall call)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(call.FunctionArguments);
+            var root = doc.RootElement;
+            switch (call.FunctionName)
+            {
+                case "add_node":
+                {
+                    var name = root.TryGetProperty("name", out var n) ? (n.GetString() ?? "") : "";
+                    var type = root.TryGetProperty("typeKey", out var t) ? (t.GetString() ?? "") : "";
+                    var pretty = type
+                        .Replace('-', ' ')
+                        .TrimEnd('s'); // "subnets" -> "subnet"
+                    if (string.IsNullOrEmpty(name)) return $"Adding {pretty}…";
+                    return $"Adding {pretty} '{name}'…";
+                }
+                case "connect_nodes":
+                {
+                    return "Connecting two resources…";
+                }
+                case "remove_node":
+                {
+                    var id = root.TryGetProperty("id", out var i) ? (i.GetString() ?? "") : "";
+                    return string.IsNullOrEmpty(id) ? "Removing node…" : $"Removing node {id}…";
+                }
+                case "clear_diagram":
+                    return "Clearing the canvas…";
+                case "microsoft_docs_search":
+                {
+                    var q = root.TryGetProperty("query", out var qe) ? (qe.GetString() ?? "") : "";
+                    return string.IsNullOrEmpty(q)
+                        ? "Searching Microsoft Learn…"
+                        : $"Searching Microsoft Learn for \"{q}\"…";
+                }
+                default:
+                    return $"Calling {call.FunctionName}…";
+            }
+        }
+        catch
+        {
+            return $"Calling {call.FunctionName}…";
+        }
+    }
+
+    /// <summary>
+    /// Evaluate the required dependencies of a single node against the
+    /// current diagram snapshot, mirroring the client-side
+    /// <c>evaluateDependencies</c> rule (parent-of-type → edge-connected →
+    /// property reference). Returns a short multiline explanation of any
+    /// REQUIRED deps that are still unfulfilled, or <c>null</c> when the
+    /// node is fully wired up. Used to nudge the model into adding the
+    /// missing pieces in its next round.
+    /// </summary>
+    private static string? DescribeUnfulfilledDeps(
+        DiagramNodeSnapshot node,
+        ChatRequest request)
+    {
+        var svc = request.AvailableServices.FirstOrDefault(s =>
+            string.Equals(s.Key, node.TypeKey, StringComparison.OrdinalIgnoreCase));
+        if (svc == null || svc.Dependencies.Count == 0) return null;
+
+        var unfulfilled = new List<string>();
+
+        // Pre-compute connected node ids for this node.
+        var connectedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in request.Edges)
+        {
+            if (string.Equals(e.Source, node.Id, StringComparison.OrdinalIgnoreCase))
+                connectedIds.Add(e.Target);
+            else if (string.Equals(e.Target, node.Id, StringComparison.OrdinalIgnoreCase))
+                connectedIds.Add(e.Source);
+        }
+
+        foreach (var dep in svc.Dependencies)
+        {
+            if (!dep.Required) continue;
+
+            DiagramNodeSnapshot? matched = null;
+            string? source = null;
+
+            // 1) parent of correct type
+            if (dep.AutoFromParent && !string.IsNullOrEmpty(node.ParentId))
+            {
+                var parent = request.Nodes.FirstOrDefault(n =>
+                    string.Equals(n.Id, node.ParentId, StringComparison.OrdinalIgnoreCase));
+                if (parent != null && IsType(parent.TypeKey, dep.TargetType))
+                {
+                    matched = parent;
+                    source = "parent";
+                }
+            }
+
+            // 2) edge-connected to a node of correct type
+            if (matched == null)
+            {
+                foreach (var n in request.Nodes)
+                {
+                    if (!connectedIds.Contains(n.Id)) continue;
+                    if (!IsType(n.TypeKey, dep.TargetType)) continue;
+                    matched = n;
+                    source = "edge";
+                    break;
+                }
+            }
+
+            // 3) requiredName check on parent/edge match
+            if (matched != null && dep.RequiredName.Count > 0)
+            {
+                var actual = matched.Name ?? "";
+                var ok = dep.RequiredName.Any(r => string.Equals(r, actual, StringComparison.Ordinal));
+                if (!ok)
+                {
+                    unfulfilled.Add(
+                        $"  - {dep.Label}: target must be named " +
+                        $"{string.Join(" or ", dep.RequiredName.Select(r => $"'{r}'"))}, " +
+                        $"but {source} '{actual}' (id={matched.Id}) doesn't match. " +
+                        (string.IsNullOrEmpty(dep.Hint) ? "" : $"Hint: {dep.Hint}"));
+                    continue;
+                }
+            }
+
+            if (matched == null)
+            {
+                // Suggest the simplest fix: connect to an existing candidate, or create one.
+                var candidate = request.Nodes.FirstOrDefault(n => IsType(n.TypeKey, dep.TargetType));
+                var fixHint = candidate != null
+                    ? $"call connect_nodes(sourceId='{node.Id}', targetId='{candidate.Id}')" +
+                      (string.IsNullOrEmpty(candidate.Name) ? "" : $" /* {candidate.Name} */")
+                    : $"first add_node(typeKey='{dep.TargetType}', ...) and then connect it";
+
+                unfulfilled.Add(
+                    $"  - {dep.Label} (needs typeKey='{dep.TargetType}'): {fixHint}." +
+                    (string.IsNullOrEmpty(dep.Hint) ? "" : $" {dep.Hint}"));
+            }
+        }
+
+        if (unfulfilled.Count == 0) return null;
+        return $"Required dependencies still unsatisfied for id={node.Id} ({node.TypeKey} '{node.Name}'):\n"
+            + string.Join("\n", unfulfilled)
+            + "\nPlease add the missing piece(s) in your next tool call(s).";
+    }
 
     private static string BuildSystemPrompt(ChatRequest request)
     {
@@ -201,7 +438,7 @@ Before you finish, every resource on the canvas must have everything it needs to
 After every change, briefly re-check the diagram and ADD missing dependencies in the same turn. Use the exact typeKeys from the catalog below; if a key isn't in the catalog, pick the closest available one and note the substitution.
 
 # Tools available
-- add_node(typeKey, name, parentId?, x?, y?) – place a new Azure resource on the canvas. typeKey MUST be one of the keys in the catalog below. Pass parentId to nest the new node inside an existing group node (Resource Group, Virtual Network, Subnet, etc.). Returns the generated node id, which you must use for connect_nodes and as parentId for children.
+- add_node(typeKey, name, parentId?, x?, y?) – place a new Azure resource on the canvas. typeKey MUST be one of the keys in the catalog below. Pass parentId to nest the new node inside an existing group node (Resource Group, Virtual Network, Subnet, etc.). Returns the generated node id (always of the form `ai-xxxxxxxxx`), which you MUST use verbatim for connect_nodes and as parentId for children. **NEVER pass a human-readable name as parentId** — only the `ai-...` id returned by a previous add_node call (or an existing id from the snapshot) is valid.
 - connect_nodes(sourceId, targetId) – draw an arrow between two nodes already on the canvas.
 - remove_node(id) – delete a node by id.
 - clear_diagram() – wipe the canvas. Only call when the user explicitly asks to start over.
@@ -219,8 +456,59 @@ Whenever you create resources:
 6. **App Service Plan hosts Web Apps / Function Apps / Logic Apps (Standard)**: when you add a `web-app`, `function-app`, or a Logic App on the Standard plan (any `logic-apps*` key running on App Service infrastructure), its parentId MUST be the `appservice-plan` (a.k.a. App Service Plan / Server Farm) that hosts it. Create the plan first, then put the apps inside it. (Logic Apps Consumption is serverless and does NOT need a plan — only nest Standard-tier Logic Apps.)
 7. **SQL Server hosts SQL Databases**: when you add a `sql-database`, its parentId MUST be the `sql-server` it lives on. Create the SQL Server first, then put each database inside it. The same applies to `cosmos-db-account` containing `cosmos-db-database`/containers, `mysql-server` containing `mysql-database`, `postgresql-server` containing `postgresql-database`, etc.
 8. When the user adds new resources to an existing diagram, look at the snapshot below — if a resource group / VNet / subnet / App Service Plan / SQL Server already exists, reuse its id as parentId rather than creating duplicates.
+9. **Satisfy every REQUIRED dependency.** After each `add_node` the tool result will tell you if the new resource is missing required references (e.g. a Bastion missing its public IP, a Private Endpoint missing its DNS zone, a VM missing its NIC). When you see "Required dependencies still unsatisfied", you MUST add the missing piece — either by creating the resource and using `connect_nodes` to link it, or, when an obvious candidate already exists, just call `connect_nodes` between them. A red warning triangle on the node is your signal that you stopped one step too soon.
+
+Common dependency wiring patterns:
+- `virtual-machine` → connect to a `network-interface` (which itself sits in a subnet) and any `managed-disk` data disks. Don't create disks as standalone unless asked, but if you do, `connect_nodes(vm, disk)` for each.
+- `network-interface` → must live INSIDE a subnet (parentId = subnet.id).
+- `bastions` (a.k.a. `azure-bastions`) → needs a `public-ip` (connect_nodes) and lives in a subnet named exactly `AzureBastionSubnet`.
+- `firewalls` (Azure Firewall) → lives in a subnet named exactly `AzureFirewallSubnet`, needs a `public-ip` (connect_nodes).
+- `vpn-gateway` / `expressroute-gateway` → lives in a subnet named exactly `GatewaySubnet`, needs a `public-ip`.
+- `application-gateways` / `app-gateway` → needs a `public-ip` (connect_nodes), lives in its own dedicated subnet.
+- `private-endpoint` → lives in a subnet, must be wired to a target resource (the thing it fronts) AND a `private-dns-zone` for the matching `privatelink.*` zone (connect the DNS zone to the VNet, NOT directly to the PE — the server will reject PE↔zone edges).
+- `kubernetes-services` (AKS) → put in a subnet, optional public IP for ingress.
+- `web-app` / `function-app` (Standard plan) → parentId = `appservice-plan`.
+- `sql-database` / `cosmos-db-database` / etc. → parentId = matching server.
 
 When calling add_node, do not pass x or y for nested children — leave them blank and they'll be auto-laid-out inside the parent.
+
+# Build complex designs LAYER BY LAYER — never stop after the top tier
+For multi-tier requests (landing zones, hub-spoke networks, multi-region apps, etc.) you have many tool-calling rounds available. **Do not declare yourself done after creating only the outermost containers.** Build the whole hierarchy in this single turn:
+
+1. Top container layer (e.g. management groups for a landing zone, hub VNet for hub-and-spoke).
+2. Mid containers (subscriptions inside management groups; spoke VNets; resource groups; etc.).
+3. Inner containers (resource groups inside subscriptions; subnets inside VNets).
+4. Leaf resources (the actual services that live inside the inner containers).
+
+After every batch of `add_node` calls, mentally re-read the snapshot. If ANY container is empty when it shouldn't be (e.g. you added a "Platform" management group but no Identity/Management/Connectivity subscriptions under it; or a "Connectivity" subscription with no hub-vnet RG inside; or a hub-vnet RG with no actual hub VNet, firewall, bastion etc.) — KEEP CALLING add_node in the same turn. Only emit your final text reply when every container has appropriate contents.
+
+# Azure landing zone (CAF) hierarchy
+When the user asks for an "Azure landing zone", "enterprise-scale landing zone", "CAF landing zone", or similar, follow Microsoft Cloud Adoption Framework Enterprise-Scale. The full structure to build (use exactly these typeKeys: `management-groups`, `subscriptions`, `resource-group`):
+
+```
+Tenant Root (management-groups, name = "Tenant Root Group" or company name)
+├── Platform (management-groups)
+│   ├── Identity (subscription) → rg-identity (resource-group, holds AD DS / AAD DS resources, key-vault for identity)
+│   ├── Management (subscription) → rg-management (resource-group, holds log-analytics-workspace, automation-account, recovery-services-vault)
+│   └── Connectivity (subscription) → rg-connectivity-hub (resource-group, holds the hub virtual-network with AzureFirewallSubnet + azure-firewall, AzureBastionSubnet + bastion, GatewaySubnet, plus private-dns-zones for the org)
+├── Landing Zones (management-groups)
+│   ├── Corp (management-groups)         — for corporate-connected workloads
+│   │   └── (subscription placeholder, e.g. "Corp LZ Subscription") → an empty rg-workload
+│   └── Online (management-groups)       — for internet-facing workloads
+│       └── (subscription placeholder, e.g. "Online LZ Subscription") → an empty rg-workload
+├── Sandbox (management-groups)
+│   └── (subscription placeholder, e.g. "Sandbox Subscription")
+└── Decommissioned (management-groups)
+```
+
+Order of build (and don't stop until ALL of it exists):
+1. Tenant root management-group → all child management-groups (Platform, Landing Zones, Corp, Online, Sandbox, Decommissioned).
+2. The platform subscriptions (Identity, Management, Connectivity) parented to their respective management-groups.
+3. One example landing-zone subscription under Corp and one under Online.
+4. The platform resource groups inside each platform subscription (rg-identity, rg-management, rg-connectivity-hub).
+5. The actual platform resources inside those RGs — at minimum: in rg-management add a `log-analytics-workspace`; in rg-connectivity-hub add a `virtual-network` named `vnet-hub`, then subnets (`AzureFirewallSubnet`, `AzureBastionSubnet`, `GatewaySubnet`), then an `azure-firewall` in the firewall subnet and a `bastion` in the bastion subnet; in rg-identity add a `key-vault`.
+
+The diagram is incomplete unless the platform resources actually exist — empty management-group / subscription / RG containers alone are NOT a landing zone.
 
 # Reply style
 - Keep replies short (1–4 sentences). After building, summarise what you placed and any best-practice rationale (e.g. "Added App Service Plan + Web App for the tier, Azure SQL for the data tier, and a Storage Account for blobs — following the Azure Architecture Center 'Basic web application' reference.").
@@ -317,26 +605,28 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                         return ($"Unknown typeKey '{typeKey}'. Pick a key from the available services list.", null, null);
                     }
 
-                    // Singleton container guard: there should only ever be one
-                    // resource group in a single-app diagram. If the model tries
-                    // to create a second one, hand back the existing id so the
-                    // resource is nested inside it instead.
-                    if (IsResourceGroup(typeKey))
-                    {
-                        var existingRg = request.Nodes.FirstOrDefault(x => IsResourceGroup(x.TypeKey));
-                        if (existingRg != null)
-                        {
-                            return (
-                                $"A resource-group already exists (id={existingRg.Id}, name=\"{existingRg.Name}\"). " +
-                                $"Reuse it as parentId instead of creating another.",
-                                null, null);
-                        }
-                    }
-
                     // Read parentId early so we can validate uniqueness scoped to it.
                     string? parentIdEarly = args.RootElement.TryGetProperty("parentId", out var pe0) && pe0.ValueKind == JsonValueKind.String
                         ? pe0.GetString()
                         : null;
+
+                    // Per-parent resource-group guard. A flat single-app
+                    // diagram only has one RG, but a CAF landing zone has
+                    // many — one per subscription. Only reject the case
+                    // where the same parent already contains an RG.
+                    if (IsResourceGroup(typeKey))
+                    {
+                        var existingRg = request.Nodes.FirstOrDefault(x =>
+                            IsResourceGroup(x.TypeKey)
+                            && string.Equals(x.ParentId ?? "", parentIdEarly ?? "", StringComparison.OrdinalIgnoreCase));
+                        if (existingRg != null && string.Equals(existingRg.Name, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return (
+                                $"A resource-group named '{existingRg.Name}' already exists under this parent (id={existingRg.Id}). " +
+                                $"Reuse it as parentId instead of creating another.",
+                                null, null);
+                        }
+                    }
 
                     // Virtual-network singleton per resource group. The model has been
                     // observed to create a second VNet in a follow-up turn instead of
@@ -484,11 +774,21 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     var id = $"ai-{Guid.NewGuid():N}".Substring(0, 12);
 
                     // Track in snapshot so subsequent connect_nodes / parentId calls work
-                    request.Nodes.Add(new DiagramNodeSnapshot { Id = id, TypeKey = typeKey, Name = name, ParentId = parentId });
+                    var addedSnap = new DiagramNodeSnapshot { Id = id, TypeKey = typeKey, Name = name, ParentId = parentId };
+                    request.Nodes.Add(addedSnap);
 
                     var resultMsg = extras.Count > 0
                         ? $"Added node id={id} (auto-created dedicated PE subnet id={extras[0].Id} — use that subnet's id for additional private-endpoint nodes)"
                         : $"Added node id={id}";
+
+                    // Tell the model about any required deps we know are still missing
+                    // so it can fix them up rather than us silently shipping a node with
+                    // a red warning triangle.
+                    var depMsg = DescribeUnfulfilledDeps(addedSnap, request);
+                    if (!string.IsNullOrEmpty(depMsg))
+                    {
+                        resultMsg = resultMsg + "\n" + depMsg;
+                    }
 
                     return (resultMsg, new DiagramAction
                     {
@@ -526,7 +826,16 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     }
 
                     request.Edges.Add(new DiagramEdgeSnapshot { Source = src, Target = tgt });
-                    return ("ok", new DiagramAction { Type = "connect_nodes", SourceId = src, TargetId = tgt }, null);
+
+                    // After wiring, re-check the source's required deps and surface
+                    // any that are still missing so the model can keep fixing things up.
+                    var srcAfter = request.Nodes.FirstOrDefault(n => n.Id == src);
+                    var stillMissing = srcAfter != null
+                        ? DescribeUnfulfilledDeps(srcAfter, request)
+                        : null;
+                    var resultStr = string.IsNullOrEmpty(stillMissing) ? "ok" : "ok\n" + stillMissing;
+
+                    return (resultStr, new DiagramAction { Type = "connect_nodes", SourceId = src, TargetId = tgt }, null);
                 }
 
                 case "remove_node":

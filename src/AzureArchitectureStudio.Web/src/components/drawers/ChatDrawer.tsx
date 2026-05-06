@@ -24,12 +24,14 @@ import {
   isOpenAIConfigured,
   type ChatTurn,
   type DiagramAction,
+  type ChatProgressEvent,
 } from '../../services';
 import {
   getDefaultProperties,
   getDisplayName,
   isGroupType,
   getGroupStyle,
+  getResourceType,
   type AzureNodeData,
   type AzureNode,
 } from '../../models';
@@ -48,6 +50,18 @@ interface DisplayMessage {
   actionsSummary?: string;
 }
 
+/**
+ * One row in the live activity log shown while the assistant is busy.
+ * `tone` controls the visual treatment so tool calls stand out from
+ * plain "thinking" markers and tool results.
+ */
+interface ActivityEntry {
+  id: number;
+  tone: 'thinking' | 'tool' | 'result' | 'docs' | 'action' | 'info';
+  title: string;
+  detail?: string;
+}
+
 const SUGGESTIONS = [
   'Build a 3-tier web app with App Service, SQL DB and Storage',
   'Add a Front Door in front of my App Service',
@@ -60,6 +74,9 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // Live activity log shown inside the "Thinking…" indicator. Cleared
+  // on every new send.
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [configured, setConfigured] = useState(() => isOpenAIConfigured(loadOpenAISettings()));
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -71,10 +88,27 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, busy]);
+  }, [messages, busy, activity.length]);
 
   const availableServices = useMemo(
-    () => azureServices.map((s) => ({ key: s.key, name: s.name, category: s.category })),
+    () => azureServices.map((s) => {
+      // Pull dependency definitions from the resource registry so the
+      // server can validate freshly-added nodes and tell the AI which
+      // required references are still missing.
+      const def = getResourceType(s.key);
+      const deps = (def?.dependencies ?? []).map((d) => ({
+        key: d.key,
+        label: d.label,
+        targetType: d.targetType,
+        required: !!d.required,
+        autoFromParent: !!d.autoFromParent,
+        hint: d.hint,
+        requiredName: d.requiredName
+          ? Array.isArray(d.requiredName) ? d.requiredName : [d.requiredName]
+          : [],
+      }));
+      return { key: s.key, name: s.name, category: s.category, dependencies: deps };
+    }),
     [azureServices]
   );
 
@@ -136,8 +170,22 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
                   ?? [];
                 const newIndex = existing.length;
                 idTranslation.set(a.id, subnetNodeId(parentNode.id, newIndex));
+                // Grow the VNet wide enough that useSubnetSync can lay all
+                // subnets out side-by-side at the minimum subnet width
+                // (120) without overlap. useSubnetSync's formula:
+                // subnetWidth = max(120, (vnetW - 24 - 8*(n-1))/n).
+                // To guarantee >= 120 we need vnetW >= 120*n + 8*(n-1) + 24.
+                const subnetCount = existing.length + 1;
+                const minVnetWidth = 120 * subnetCount + 8 * Math.max(0, subnetCount - 1) + 24;
+                const minVnetHeight = 220;
+                const curW = (n.style?.width as number | undefined) ?? 360;
+                const curH = (n.style?.height as number | undefined) ?? 220;
+                const newW = Math.max(curW, minVnetWidth);
+                const newH = Math.max(curH, minVnetHeight);
                 return {
                   ...n,
+                  width: newW,
+                  height: newH,
                   data: {
                     ...data,
                     properties: {
@@ -148,6 +196,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
                       ],
                     },
                   },
+                  style: { ...(n.style ?? {}), width: newW, height: newH },
                 } satisfies AzureNode;
               });
               continue;
@@ -302,21 +351,69 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
       setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
       setInput('');
       setBusy(true);
+      setActivity([]);
+
+      // Auto-incrementing id so React can key the activity rows
+      // independently from their content.
+      let nextId = 0;
+      const pushActivity = (entry: Omit<ActivityEntry, 'id'>) =>
+        setActivity((prev) => [...prev, { ...entry, id: nextId++ }]);
 
       try {
-        const resp = await chatService.send({
-          settings,
-          history,
-          message: trimmed,
-          nodes: nodes.map((n) => ({
-            id: n.id,
-            typeKey: (n.data as AzureNodeData).typeKey,
-            name: (n.data as AzureNodeData).name,
-            parentId: (n as { parentId?: string }).parentId,
-          })),
-          edges: edges.map((e) => ({ source: e.source, target: e.target })),
-          availableServices,
-        });
+        const resp = await chatService.sendStream(
+          {
+            settings,
+            history,
+            message: trimmed,
+            nodes: nodes.map((n) => ({
+              id: n.id,
+              typeKey: (n.data as AzureNodeData).typeKey,
+              name: (n.data as AzureNodeData).name,
+              parentId: (n as { parentId?: string }).parentId,
+            })),
+            edges: edges.map((e) => ({ source: e.source, target: e.target })),
+            availableServices,
+          },
+          (evt: ChatProgressEvent) => {
+            switch (evt.kind) {
+              case 'thinking':
+                pushActivity({ tone: 'thinking', title: evt.title || 'Thinking…' });
+                break;
+              case 'tool_call':
+                pushActivity({
+                  tone: evt.title?.toLowerCase().includes('microsoft learn') ? 'docs' : 'tool',
+                  title: evt.title || 'Calling tool…',
+                });
+                break;
+              case 'tool_result':
+                // Truncate noisy tool results so the log stays readable.
+                pushActivity({
+                  tone: 'result',
+                  title: 'Result',
+                  detail: truncate(evt.detail, 200),
+                });
+                break;
+              case 'action':
+                if (evt.action) {
+                  pushActivity({
+                    tone: 'action',
+                    title: describeAction(evt.action),
+                  });
+                }
+                break;
+              case 'assistant':
+                // Final text — no need to echo here, it'll appear in the
+                // chat transcript when the response lands.
+                break;
+              case 'info':
+                pushActivity({ tone: 'info', title: evt.title || evt.detail || 'Info' });
+                break;
+              case 'done':
+                // Handled by the resolved promise below.
+                break;
+            }
+          },
+        );
 
         if (!resp.success) {
           setMessages((prev) => [
@@ -330,6 +427,17 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             ...prev,
             { role: 'assistant', content: resp.message, actionsSummary: summary },
           ]);
+          // After the diagram has settled (groups grown, subnets synced)
+          // ask the canvas to fit the new content into view so the user
+          // can actually see what the AI built. Defer past two RAFs so
+          // useSubnetSync + the layout pass have flushed.
+          if (resp.actions.length > 0) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new CustomEvent('aas:fit-view'));
+              });
+            });
+          }
         }
       } catch (err) {
         setMessages((prev) => [
@@ -338,6 +446,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
         ]);
       } finally {
         setBusy(false);
+        setActivity([]);
       }
     },
     [busy, messages, nodes, edges, availableServices, applyActions]
@@ -433,7 +542,20 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
 
             {busy && (
               <div className="chat-thinking">
-                <Spinner size="tiny" /> Thinking…
+                <div className="chat-thinking-header">
+                  <Spinner size="tiny" />
+                  <span>{activity.length === 0 ? 'Thinking…' : 'Working…'}</span>
+                </div>
+                {activity.length > 0 && (
+                  <ul className="chat-live-log">
+                    {activity.map((a) => (
+                      <li key={a.id} className={`chat-live-log-row chat-live-log-${a.tone}`}>
+                        <span className="chat-live-log-title">{a.title}</span>
+                        {a.detail && <span className="chat-live-log-detail">{a.detail}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </div>
@@ -676,4 +798,28 @@ function summariseActions(actions: DiagramAction[]): string | undefined {
   if (counts['remove_node']) parts.push(`−${counts['remove_node']} node${counts['remove_node'] === 1 ? '' : 's'}`);
   if (counts['clear_diagram']) parts.push('cleared diagram');
   return parts.length ? `Diagram updated: ${parts.join(', ')}` : undefined;
+}
+
+/** One-line description of a single diagram action for the activity log. */
+function describeAction(a: DiagramAction): string {
+  switch (a.type) {
+    case 'add_node': {
+      const name = a.name || a.id || 'node';
+      const t = (a.typeKey || '').replace(/-/g, ' ').replace(/s$/, '');
+      return t ? `Added ${t} '${name}'` : `Added '${name}'`;
+    }
+    case 'connect_nodes':
+      return `Connected ${a.sourceId} → ${a.targetId}`;
+    case 'remove_node':
+      return `Removed ${a.id}`;
+    case 'clear_diagram':
+      return 'Cleared the canvas';
+    default:
+      return 'Updated diagram';
+  }
+}
+
+function truncate(s: string | undefined, n: number): string | undefined {
+  if (!s) return s;
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
