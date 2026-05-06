@@ -210,6 +210,36 @@ function extractArmPath(absoluteUrl: string): string | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// VM sizes (live, per-region)
+// ---------------------------------------------------------------------------
+
+/** A VM SKU as returned by /providers/Microsoft.Compute/locations/{loc}/vmSizes. */
+export interface AzureVmSize {
+  name: string;                    // e.g. "Standard_D4s_v5"
+  numberOfCores: number;           // vCPU count
+  memoryInMB: number;              // RAM in megabytes
+  osDiskSizeInMB?: number;
+  resourceDiskSizeInMB?: number;
+  maxDataDiskCount?: number;
+}
+
+/**
+ * List every VM size offered in a given region under a given subscription.
+ * Returns null when the call fails (no auth, no permission, no quota etc.)
+ * so callers can fall back to a static catalog.
+ */
+export async function listVmSizes(
+  subscriptionId: string,
+  location: string,
+): Promise<AzureVmSize[] | null> {
+  const data = await armFetch<{ value: AzureVmSize[] }>(
+    `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/locations/${location}/vmSizes`,
+    '2024-07-01',
+  );
+  return data?.value ?? null;
+}
+
 /**
  * Fetch full per-resource details for each id, replacing the `properties`
  * field on the corresponding entry in the input list. Best-effort:

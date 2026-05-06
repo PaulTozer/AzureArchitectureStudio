@@ -9,12 +9,14 @@ export {
   listSubscriptionsUnderManagementGroup,
   enrichResourcesWithFullProperties,
   getArmAccessToken,
+  listVmSizes,
   type AzureSubscription,
   type AzureResourceGroup,
   type AzureManagementGroup,
   type AzureArmResource,
   type AzureMgChildSubscription,
   type ScopeRef,
+  type AzureVmSize,
 } from './azure-mgmt';
 export {
   loadOpenAISettings,

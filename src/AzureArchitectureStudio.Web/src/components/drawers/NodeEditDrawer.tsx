@@ -244,6 +244,7 @@ export default function NodeEditDrawer({
                 ? { ...data.properties, addressPrefix: displayAddressPrefix }
                 : data.properties
             }
+            nodeId={node.id}
             onChange={handlePropertyChange}
             onMultiChange={(updates) => {
               updateNodeData(node.id, {

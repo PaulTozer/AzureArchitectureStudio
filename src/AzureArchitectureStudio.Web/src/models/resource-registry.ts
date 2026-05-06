@@ -11,15 +11,19 @@ import {
 export interface PropertyField {
   key: string;
   label: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker' | 'vm-size-picker';
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
   /**
    * For 'select' fields. Names a shared option list defined in code
-   * (e.g. 'azureRegions') instead of inlining the options in JSON. The
-   * resolver lives in `SchemaForm`.
+   * instead of inlining the options in JSON. Supported values:
+   *   'azureRegions'      — every Azure commercial region
+   *   'vmFamilies'        — every Azure VM family in the curated catalog
+   *   'vmSizes:<family>'  — every SKU within a given family, e.g.
+   *                         'vmSizes:Dsv5'.
+   * The resolver lives in `SchemaForm`.
    */
-  optionsSource?: 'azureRegions';
+  optionsSource?: 'azureRegions' | 'vmFamilies' | `vmSizes:${string}`;
   placeholder?: string;
   required?: boolean;
   /** Schema for items in a simple string array */

@@ -14,12 +14,19 @@ import { AddRegular, DeleteRegular, ChevronDownRegular, ChevronRightRegular } fr
 import { useState } from 'react';
 import type { PropertyField } from '../../models/resource-registry';
 import { regionOptions } from '../../models/azure-regions';
+import { vmFamilyOptions, vmSizeOptions } from '../../models/vm-sizes';
 import AzurePickerField from './AzurePickerField';
+import VmSizePicker from './VmSizePicker';
 import { dbg } from '../../utils/debug';
 
 /** Resolve a field's effective select options, honouring `optionsSource`. */
 function resolveOptions(field: PropertyField): { label: string; value: string }[] {
-  if (field.optionsSource === 'azureRegions') return regionOptions();
+  const src = field.optionsSource;
+  if (src === 'azureRegions') return regionOptions();
+  if (src === 'vmFamilies') return vmFamilyOptions();
+  if (typeof src === 'string' && src.startsWith('vmSizes:')) {
+    return vmSizeOptions(src.slice('vmSizes:'.length));
+  }
   return field.options ?? [];
 }
 
@@ -29,13 +36,16 @@ interface SchemaFormProps {
   onChange: (key: string, value: unknown) => void;
   /** Optional batched multi-field update (used by azure-picker). */
   onMultiChange?: (updates: Record<string, unknown>) => void;
+  /** Node id of the resource being edited — needed by context-aware
+   *  pickers (e.g. VmSizePicker) that walk the diagram for hints. */
+  nodeId?: string;
 }
 
 /**
  * Renders form fields dynamically from a PropertyField schema.
  * No per-resource-type code needed — the JSON registry drives everything.
  */
-export default function SchemaForm({ schema, properties, onChange, onMultiChange }: SchemaFormProps) {
+export default function SchemaForm({ schema, properties, onChange, onMultiChange, nodeId }: SchemaFormProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
       {schema.map((field, index) => {
@@ -56,6 +66,7 @@ export default function SchemaForm({ schema, properties, onChange, onMultiChange
             schema={schema}
             onChange={onChange}
             onMultiChange={onMultiChange}
+            nodeId={nodeId}
           />
         );
       })}
@@ -72,9 +83,10 @@ interface SchemaFieldProps {
   schema?: PropertyField[];
   onChange: (key: string, value: unknown) => void;
   onMultiChange?: (updates: Record<string, unknown>) => void;
+  nodeId?: string;
 }
 
-function SchemaField({ field, value, schema, onChange, onMultiChange }: SchemaFieldProps) {
+function SchemaField({ field, value, properties, schema, onChange, onMultiChange, nodeId }: SchemaFieldProps) {
   switch (field.type) {
     case 'string':
     case 'password':
@@ -216,6 +228,21 @@ function SchemaField({ field, value, schema, onChange, onMultiChange }: SchemaFi
           value={value}
           onChange={onChange}
           onMultiChange={onMultiChange}
+        />
+      );
+
+    case 'vm-size-picker':
+      // Specialised picker that fetches the live ARM vmSizes catalog
+      // when sub + region are known. Field key is normally 'vmSize';
+      // it also reads + writes the sibling 'vmFamily' hint atomically.
+      if (!nodeId || !onMultiChange) return null;
+      return (
+        <VmSizePicker
+          value={(value as string) ?? ''}
+          familyValue={(properties.vmFamily as string) ?? ''}
+          properties={properties}
+          onChange={onMultiChange}
+          nodeId={nodeId}
         />
       );
 
