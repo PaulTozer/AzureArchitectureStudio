@@ -13,19 +13,22 @@ import {
 import { AddRegular, DeleteRegular, ChevronDownRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import type { PropertyField } from '../../models/resource-registry';
+import AzurePickerField from './AzurePickerField';
 import { dbg } from '../../utils/debug';
 
 interface SchemaFormProps {
   schema: PropertyField[];
   properties: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  /** Optional batched multi-field update (used by azure-picker). */
+  onMultiChange?: (updates: Record<string, unknown>) => void;
 }
 
 /**
  * Renders form fields dynamically from a PropertyField schema.
  * No per-resource-type code needed — the JSON registry drives everything.
  */
-export default function SchemaForm({ schema, properties, onChange }: SchemaFormProps) {
+export default function SchemaForm({ schema, properties, onChange, onMultiChange }: SchemaFormProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
       {schema.map((field) => {
@@ -44,6 +47,7 @@ export default function SchemaForm({ schema, properties, onChange }: SchemaFormP
             value={properties[field.key] ?? field.defaultValue}
             properties={properties}
             onChange={onChange}
+            onMultiChange={onMultiChange}
           />
         );
       })}
@@ -56,9 +60,10 @@ interface SchemaFieldProps {
   value: unknown;
   properties: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  onMultiChange?: (updates: Record<string, unknown>) => void;
 }
 
-function SchemaField({ field, value, onChange }: SchemaFieldProps) {
+function SchemaField({ field, value, onChange, onMultiChange }: SchemaFieldProps) {
   switch (field.type) {
     case 'string':
     case 'password':
@@ -161,6 +166,16 @@ function SchemaField({ field, value, onChange }: SchemaFieldProps) {
           field={field}
           value={(value as Record<string, unknown>[]) ?? []}
           onChange={onChange}
+        />
+      );
+
+    case 'azure-picker':
+      return (
+        <AzurePickerField
+          field={field}
+          value={value}
+          onChange={onChange}
+          onMultiChange={onMultiChange}
         />
       );
 

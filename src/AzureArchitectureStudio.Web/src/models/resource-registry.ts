@@ -11,7 +11,7 @@ import {
 export interface PropertyField {
   key: string;
   label: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker';
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
   placeholder?: string;
@@ -21,6 +21,21 @@ export interface PropertyField {
   visibleWhen?: { field: string; value: string | string[] };
   /** Child fields for 'object' and 'object-array' types */
   children?: PropertyField[];
+  /**
+   * For 'azure-picker' fields. Names a remote ARM source the dropdown is
+   * populated from once the user is signed in.
+   */
+  azureSource?: 'subscription' | 'managementGroup';
+  /**
+   * For 'azure-picker' fields. Maps the chosen item's properties onto
+   * sibling fields when a selection is made (in addition to setting
+   * `field.key` itself). e.g. picking a subscription can also fill the
+   * displayName property.
+   *
+   * Keys are property names on the resource; values are dotted paths into
+   * the picked item.
+   */
+  azureFieldMap?: Record<string, string>;
 }
 
 export interface ArmMappingDef {

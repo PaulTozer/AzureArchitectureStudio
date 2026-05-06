@@ -152,26 +152,6 @@ export default function NodeEditDrawer({
             size="small"
           />
         </Field>
-        <Field label="Location">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Switch
-              checked={data.useResourceGroupLocation}
-              onChange={(_, d) =>
-                handleChange('useResourceGroupLocation', d.checked)
-              }
-              label="Use Resource Group location"
-            />
-          </div>
-          {!data.useResourceGroupLocation && (
-            <Input
-              value={data.location}
-              onChange={(_, d) => handleChange('location', d.value)}
-              size="small"
-              placeholder="e.g. eastus"
-              style={{ marginTop: 4 }}
-            />
-          )}
-        </Field>
 
         {/* Resource-specific properties — driven by registry schema */}
         {loading ? (
@@ -190,6 +170,11 @@ export default function NodeEditDrawer({
                 : data.properties
             }
             onChange={handlePropertyChange}
+            onMultiChange={(updates) => {
+              updateNodeData(node.id, {
+                properties: { ...data.properties, ...updates },
+              });
+            }}
           />
         ) : (
           <p style={{ marginTop: 12, color: 'var(--colorNeutralForeground3)', fontSize: 12 }}>

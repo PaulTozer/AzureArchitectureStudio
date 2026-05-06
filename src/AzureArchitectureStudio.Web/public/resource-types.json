@@ -33,6 +33,18 @@
     "apiVersion": "2023-04-01",
     "propertySchema": [
       {
+        "key": "id",
+        "label": "Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "id": "id",
+          "name": "name",
+          "displayName": "properties.displayName"
+        },
+        "placeholder": "Pick a management group from your tenant"
+      },
+      {
         "key": "displayName",
         "label": "Display Name",
         "type": "string",
@@ -40,9 +52,13 @@
       },
       {
         "key": "parentManagementGroupId",
-        "label": "Parent Management Group ID",
-        "type": "string",
-        "placeholder": "/providers/Microsoft.Management/managementGroups/<parent>"
+        "label": "Parent Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "parentManagementGroupId": "id"
+        },
+        "placeholder": "Pick the parent management group"
       }
     ],
     "armMapping": {
@@ -65,9 +81,15 @@
     "propertySchema": [
       {
         "key": "subscriptionId",
-        "label": "Subscription ID",
-        "type": "string",
-        "placeholder": "00000000-0000-0000-0000-000000000000"
+        "label": "Subscription",
+        "type": "azure-picker",
+        "azureSource": "subscription",
+        "azureFieldMap": {
+          "subscriptionId": "subscriptionId",
+          "displayName": "displayName",
+          "tenantId": "tenantId"
+        },
+        "placeholder": "Pick a subscription from your tenant"
       },
       {
         "key": "displayName",
@@ -76,10 +98,20 @@
         "placeholder": "Landing Zone A2"
       },
       {
-        "key": "managementGroupId",
-        "label": "Parent Management Group ID",
+        "key": "tenantId",
+        "label": "Tenant ID",
         "type": "string",
-        "placeholder": "/providers/Microsoft.Management/managementGroups/<mg>"
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "managementGroupId",
+        "label": "Parent Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "managementGroupId": "id"
+        },
+        "placeholder": "Pick the parent management group"
       }
     ],
     "armMapping": {},

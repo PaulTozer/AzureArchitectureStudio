@@ -22,7 +22,7 @@ import {
 import { useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../../context/AppContext';
 import { designService } from '../../services';
-import type { AzureNodeData, DiagramGraph, AzureNodeDto, LinkModelDto } from '../../models';
+import type { AzureNodeData, AzureNode, DiagramGraph, AzureNodeDto, LinkModelDto } from '../../models';
 
 interface SaveDrawerProps {
   open: boolean;
