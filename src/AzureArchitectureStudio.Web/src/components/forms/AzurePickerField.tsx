@@ -172,7 +172,6 @@ export default function AzurePickerField({
             for (const [k, v] of Object.entries(updates)) onChange(k, v);
           }
         }}
-        contentAfter={loading ? <Spinner size="tiny" /> : undefined}
       >
         {(items ?? []).map((it) => (
           <Option key={it.key} value={it.key} text={it.label}>

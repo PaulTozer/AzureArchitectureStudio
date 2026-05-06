@@ -26,6 +26,7 @@ import {
 import {
   PersonRegular,
   ArrowExportRegular,
+  ArrowImportRegular,
   SaveRegular,
   FolderOpenRegular,
   DocumentRegular,
@@ -36,6 +37,7 @@ import {
   DocumentAddRegular,
   SparkleRegular,
   SettingsRegular,
+  AutoFitWidthRegular,
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
@@ -50,13 +52,15 @@ import CodeDrawer from './drawers/CodeDrawer';
 import SaveDrawer from './drawers/SaveDrawer';
 import ChatDrawer from './drawers/ChatDrawer';
 import SettingsDialog from './dialogs/SettingsDialog';
+import ImportDialog from './dialogs/ImportDialog';
 import SubscriptionPicker from './SubscriptionPicker';
+import { autoLayout } from '../utils/auto-layout';
 import './TopMenu.css';
 
 export default function TopMenu() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
-  const { nodes, edges, clearDiagram } = useAppContext();
+  const { nodes, edges, setNodes, clearDiagram } = useAppContext();
   const toasterId = useId('toaster');
   const { dispatchToast } = useToastController(toasterId);
 
@@ -68,6 +72,7 @@ export default function TopMenu() {
   const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imgPreview, setImgPreview] = useState<string | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -212,6 +217,42 @@ export default function TopMenu() {
             New
           </ToolbarButton>
 
+          {/* Import from Azure */}
+          <ToolbarButton
+            icon={<ArrowImportRegular />}
+            onClick={() => {
+              if (!isAuthenticated) {
+                showToast('Sign in with Azure to import existing resources.', 'warning');
+                return;
+              }
+              setImportDialogOpen(true);
+            }}
+          >
+            Import
+          </ToolbarButton>
+
+          {/* Auto-arrange */}
+          <ToolbarButton
+            icon={<AutoFitWidthRegular />}
+            onClick={async () => {
+              if (nodes.length === 0) {
+                showToast('Nothing on the canvas to arrange.', 'info');
+                return;
+              }
+              try {
+                const laidOut = await autoLayout(nodes, edges);
+                setNodes(laidOut);
+                window.dispatchEvent(new CustomEvent('aas:fit-view'));
+                showToast('Diagram re-arranged.', 'success');
+              } catch (err) {
+                console.error(err);
+                showToast('Auto-arrange failed.', 'error');
+              }
+            }}
+          >
+            Arrange
+          </ToolbarButton>
+
           {/* Export menu */}
           <Menu>
             <MenuTrigger disableButtonEnhancement>
@@ -337,6 +378,13 @@ export default function TopMenu() {
       <SettingsDialog
         open={settingsDialogOpen}
         onClose={() => setSettingsDialogOpen(false)}
+      />
+
+      {/* Import from Azure dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onToast={showToast}
       />
 
       {/* New diagram confirmation */}

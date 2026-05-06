@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -160,6 +160,18 @@ export default function DiagramPanel() {
     (conn: Edge | Connection) => validateConnection(conn).allowed,
     [validateConnection]
   );
+
+  // Listen for external requests to fit the viewport (e.g. after Import).
+  useEffect(() => {
+    const onFit = () => {
+      // Defer to allow newly-added nodes to be measured before fitting.
+      window.requestAnimationFrame(() => {
+        reactFlowInstance.current?.fitView({ padding: 0.2, duration: 300 });
+      });
+    };
+    window.addEventListener('aas:fit-view', onFit);
+    return () => window.removeEventListener('aas:fit-view', onFit);
+  }, []);
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {

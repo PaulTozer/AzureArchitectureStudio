@@ -3134,6 +3134,42 @@
     ]
   },
   {
+    "key": "container-apps-environments",
+    "displayName": "Container Apps Environment",
+    "armType": "Microsoft.App/managedEnvironments",
+    "apiVersion": "2023-05-01",
+    "propertySchema": [
+      {
+        "key": "zoneRedundant",
+        "label": "Zone Redundant",
+        "type": "boolean",
+        "defaultValue": false
+      },
+      {
+        "key": "internalLoadBalancerEnabled",
+        "label": "Internal Only",
+        "type": "boolean",
+        "defaultValue": false
+      }
+    ],
+    "dependencies": [
+      {
+        "key": "logsRef",
+        "label": "Log Analytics workspace",
+        "targetType": "log-analytics",
+        "required": true,
+        "hint": "Environment needs a Log Analytics workspace for diagnostics."
+      },
+      {
+        "key": "subnetRef",
+        "label": "Subnet (VNet integration)",
+        "targetType": "subnet",
+        "required": false,
+        "hint": "Required only for VNet-integrated environments."
+      }
+    ]
+  },
+  {
     "key": "container-apps",
     "displayName": "Container App",
     "armType": "Microsoft.App/containerApps",
@@ -3267,19 +3303,11 @@
     },
     "dependencies": [
       {
-        "key": "subnetRef",
-        "label": "Subnet (Container Apps environment)",
-        "targetType": "subnet",
-        "required": false,
-        "autoFromParent": true,
-        "hint": "Required for VNet-integrated environments."
-      },
-      {
-        "key": "logsRef",
-        "label": "Log Analytics workspace",
-        "targetType": "log-analytics",
+        "key": "environmentRef",
+        "label": "Container Apps Environment",
+        "targetType": "container-apps-environments",
         "required": true,
-        "hint": "Container Apps environment needs a Log Analytics workspace."
+        "hint": "Container App must run inside an environment."
       },
       {
         "key": "registryRef",

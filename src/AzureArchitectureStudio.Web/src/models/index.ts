@@ -14,5 +14,6 @@ export {
   getDisplayName,
   getDefaultProperties,
   getArmType,
+  getArmTypeMap,
 } from './resource-registry';
 export type { ResourceTypeDefinition, PropertyField, ResourceDependencyDef } from './resource-registry';

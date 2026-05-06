@@ -4,10 +4,15 @@ export {
   listSubscriptions,
   listResourceGroups,
   listManagementGroups,
+  listResourcesInSubscription,
+  listResourcesInResourceGroup,
+  listSubscriptionsUnderManagementGroup,
   getArmAccessToken,
   type AzureSubscription,
   type AzureResourceGroup,
   type AzureManagementGroup,
+  type AzureArmResource,
+  type AzureMgChildSubscription,
   type ScopeRef,
 } from './azure-mgmt';
 export {

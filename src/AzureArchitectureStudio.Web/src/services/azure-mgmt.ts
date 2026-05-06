@@ -62,8 +62,13 @@ export async function getArmAccessToken(): Promise<string | null> {
 async function armFetch<T>(path: string, apiVersion: string): Promise<T | null> {
   const token = await getArmAccessToken();
   if (!token) return null;
-  const sep = path.includes('?') ? '&' : '?';
-  const res = await fetch(`${ARM_BASE}${path}${sep}api-version=${apiVersion}`, {
+  // Don't double-add api-version when the caller already supplied one
+  // (e.g. when following a nextLink path).
+  const hasApiVersion = /[?&]api-version=/i.test(path);
+  const url = hasApiVersion
+    ? `${ARM_BASE}${path}`
+    : `${ARM_BASE}${path}${path.includes('?') ? '&' : '?'}api-version=${apiVersion}`;
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return null;
@@ -99,3 +104,109 @@ export async function listManagementGroups(): Promise<AzureManagementGroup[]> {
   );
   return data?.value ?? [];
 }
+
+// ---------------------------------------------------------------------------
+// Resource enumeration (used by the Import flow)
+// ---------------------------------------------------------------------------
+
+/** Generic ARM resource record returned by /resources. */
+export interface AzureArmResource {
+  id: string;            // /subscriptions/{sub}/resourceGroups/{rg}/providers/{type}/{name}[/...]
+  name: string;
+  type: string;          // e.g. "Microsoft.Storage/storageAccounts"
+  location?: string;
+  kind?: string;
+  tags?: Record<string, string>;
+  sku?: { name?: string; tier?: string };
+  /** Populated when the listing was requested with $expand=properties. */
+  properties?: Record<string, unknown>;
+}
+
+/** List ALL resources in a subscription (all RGs, all types). */
+export async function listResourcesInSubscription(
+  subscriptionId: string,
+): Promise<AzureArmResource[]> {
+  const out: AzureArmResource[] = [];
+  let next: string | null =
+    `/subscriptions/${subscriptionId}/resources?$expand=properties`;
+  while (next) {
+    const data: { value: AzureArmResource[]; nextLink?: string } | null = await armFetch(
+      next,
+      '2021-04-01',
+    );
+    if (!data) break;
+    out.push(...(data.value ?? []));
+    next = data.nextLink ? extractArmPath(data.nextLink) : null;
+  }
+  return out;
+}
+
+/** List all resources within a specific resource group. */
+export async function listResourcesInResourceGroup(
+  subscriptionId: string,
+  resourceGroupName: string,
+): Promise<AzureArmResource[]> {
+  const out: AzureArmResource[] = [];
+  let next: string | null =
+    `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/resources?$expand=properties`;
+  while (next) {
+    const data: { value: AzureArmResource[]; nextLink?: string } | null = await armFetch(
+      next,
+      '2021-04-01',
+    );
+    if (!data) break;
+    out.push(...(data.value ?? []));
+    next = data.nextLink ? extractArmPath(data.nextLink) : null;
+  }
+  return out;
+}
+
+/** Subscription record returned when descending a management group. */
+export interface AzureMgChildSubscription {
+  id: string;            // /subscriptions/{guid}
+  name: string;          // guid
+  displayName?: string;
+}
+
+/** List subscriptions that descend from a management group (recursive expansion). */
+export async function listSubscriptionsUnderManagementGroup(
+  managementGroupName: string,
+): Promise<AzureMgChildSubscription[]> {
+  // The descendants endpoint returns subscriptions and child MGs in one call.
+  const out: AzureMgChildSubscription[] = [];
+  const seen = new Set<string>();
+  let next: string | null =
+    `/providers/Microsoft.Management/managementGroups/${managementGroupName}/descendants`;
+  while (next) {
+    const data: {
+      value: Array<{ id: string; name: string; type: string; properties?: { displayName?: string } }>;
+      nextLink?: string;
+    } | null = await armFetch(next, '2021-04-01');
+    if (!data) break;
+    for (const item of data.value ?? []) {
+      if (item.type === '/subscriptions' || item.type === 'Microsoft.Management/managementGroups/subscriptions') {
+        if (!seen.has(item.name)) {
+          seen.add(item.name);
+          out.push({
+            id: `/subscriptions/${item.name}`,
+            name: item.name,
+            displayName: item.properties?.displayName,
+          });
+        }
+      }
+    }
+    next = data.nextLink ? extractArmPath(data.nextLink) : null;
+  }
+  return out;
+}
+
+/** Strip the management.azure.com host from an ARM nextLink to leave just the path+query. */
+function extractArmPath(absoluteUrl: string): string | null {
+  try {
+    const u = new URL(absoluteUrl);
+    return u.pathname + u.search;
+  } catch {
+    return null;
+  }
+}
+

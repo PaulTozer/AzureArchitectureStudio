@@ -79,6 +79,10 @@
 
   "event-grid-topics": "Microsoft.EventGrid/topics",
   "event-grid-domains": "Microsoft.EventGrid/domains",
+  "system-topic": "Microsoft.EventGrid/systemTopics",
+
+  "private-dns-zones": "Microsoft.Network/privateDnsZones",
+  "private-dns-zone-vnet-link": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
 
   "cdn-profiles": "Microsoft.Cdn/profiles",
 

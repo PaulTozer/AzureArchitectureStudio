@@ -121,7 +121,7 @@ const KEY_ALIASES: Record<string, string> = {
 };
 
 /** Resolves any incoming key to its canonical registry key. */
-function resolveKey(key: string): string {
+export function resolveKey(key: string): string {
   // Strip any --category dedup suffix from azure-services.json
   const base = key.replace(/--.*$/, '');
   return KEY_ALIASES[base] ?? base;
@@ -347,6 +347,15 @@ async function enrichCuratedAsync(
  */
 export function getArmType(key: string): string | undefined {
   return registry.get(key)?.armType ?? armTypeMap[key];
+}
+
+/**
+ * Returns the raw `arm-type-map.json` mapping (service-key → ARM type).
+ * Used by the Import flow to recognise resources whose curated registry
+ * entry doesn't carry an `armType` directly.
+ */
+export function getArmTypeMap(): Record<string, string> {
+  return armTypeMap;
 }
 
 // ---------------------------------------------------------------------------
