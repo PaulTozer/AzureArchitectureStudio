@@ -22,6 +22,7 @@ import {
   listResourcesInSubscription,
   listResourcesInResourceGroup,
   listSubscriptionsUnderManagementGroup,
+  enrichResourcesWithFullProperties,
   type AzureSubscription,
   type AzureResourceGroup,
   type AzureManagementGroup,
@@ -30,6 +31,7 @@ import {
 import { useAppContext } from '../../context/AppContext';
 import { buildNodesFromArmResources } from '../../models/arm-import';
 import { autoLayout } from '../../utils/auto-layout';
+import { getResourceType, getAllResourceTypes } from '../../models';
 import type { AzureNode } from '../../models';
 
 type ScopeKind = 'managementGroup' | 'subscription' | 'resourceGroup';
@@ -157,7 +159,30 @@ export default function ImportDialog({ open, onClose, onToast }: ImportDialogPro
     }
     setImporting(true);
     try {
-      const result = buildNodesFromArmResources(preview, { iconCatalog: azureServices });
+      // Enrich each resource with its full provider-specific properties
+      // so we can infer cross-references (PE → NIC, vnet-link → zone,
+      // etc.) that the generic /resources listing does not return.
+      const armTypeToApiVersion = new Map<string, string>();
+      for (const def of getAllResourceTypes()) {
+        if (def.armType && def.apiVersion) {
+          armTypeToApiVersion.set(def.armType.toLowerCase(), def.apiVersion);
+        }
+      }
+      const apiVersionFor = (armType: string): string | undefined => {
+        const exact = armTypeToApiVersion.get(armType.toLowerCase());
+        if (exact) return exact;
+        // Heuristic: trim child segments down to the root type.
+        const parts = armType.split('/');
+        if (parts.length > 2) {
+          const root = `${parts[0]}/${parts[1]}`.toLowerCase();
+          return armTypeToApiVersion.get(root);
+        }
+        return undefined;
+      };
+      // Touch getResourceType to keep the import alive (used elsewhere).
+      void getResourceType;
+      const enriched = await enrichResourcesWithFullProperties(preview, apiVersionFor);
+      const result = buildNodesFromArmResources(enriched, { iconCatalog: azureServices });
       // Run the imported subgraph through ELK for a clean layout before
       // appending. Best-effort — if elk fails, we still ship the unlaid
       // nodes so the import succeeds.

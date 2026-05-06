@@ -14,7 +14,20 @@ The primary goal of Azure Architecture Studio is to help users create high-quali
 
 Azure Architecture Studio builds on the foundation of [Azure Design Studio](https://github.com/chunliu/AzureDesignStudio), which won the [3rd Place Winner award](https://www.credly.com/badges/08684d43-a00e-418c-8cf3-4b5eb48f601f/linked_in_profile) at the **Microsoft Global Hackathon 2022**. Azure Architecture Studio is a new product for the **Microsoft Global Hackathon 2026**, with significant new features and capabilities beyond the original.
 
-![screenshot](/assets/AzureDesignStudioV1.gif)
+The front-end has been rebuilt from Blazor WebAssembly to a modern **React + TypeScript** SPA powered by **@xyflow/react** for the diagram canvas, while retaining the existing **ASP.NET Core (.NET 10)** server for IaC generation, deployment, and AI-assisted services.
+
+## What's new
+
+- **React 19 + TypeScript 5 + Vite 6** front-end replacing the previous Blazor WASM client.
+- **@xyflow/react (React Flow) v12** for the diagram canvas with custom Azure node and group rendering.
+- **Fluent UI v9** (`@fluentui/react-components`, `@fluentui/react-icons`) component library.
+- **Azure Import**: connect to your Azure tenant via MSAL and import live resources (subscription, resource group, or management group scope) directly onto the canvas. Resources are placed inside their resource group containers and wired up with inferred dependency edges.
+- **Per-resource property enrichment** during import — every resource is fetched with its full provider-specific properties so cross-references (private endpoint → target, NIC → subnet, vnet-link → DNS zone, Container App env → vnet, etc.) become real edges on the canvas.
+- **Deterministic auto-layout** powered by [elkjs](https://github.com/kieler/elkjs) — both on first import and via the **Arrange** toolbar button.
+- **VNet → subnet rendering**: virtual networks are emitted as group containers and their subnets are rendered as child nodes derived from the imported address space.
+- **AI-assisted services** on the server (Azure OpenAI) used for describe/suggest flows.
+- **gRPC-Web** between the web client and server for design and deploy contracts (see `*.proto` in `AzureArchitectureStudio.SharedModels`).
+
 
 ## Contribution
 
@@ -22,26 +35,67 @@ All feedback and suggestions are welcome. Please feel free to create an issue if
 
 If you want to build and debug the code locally, please follow the instruction below. All PRs are welcome too.
 
+### Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 20+](https://nodejs.org/) and npm
+- Visual Studio 2022 (17.12+) **or** VS Code with the C# Dev Kit
+- (Optional) Azure CLI — required if you want to use the **Azure Import** feature against your tenant
+- (Optional) Docker Desktop — only needed to build the container image
+
 ### Build it locally
 
-To build and test the code locally, you will need the following tools:
+Clone the repo, then build/run the two halves of the app.
 
-- Visual Studio 2022 (latest version)
-- (Optional) Azure CLI, if you want to debug and test the code locally.
-- (Optional) Docker Desktop, if you want to build the docker image locally.
+**Front-end (React + Vite):**
 
-To build the code, clone the repo and open the solution in Visual Studio 2022.
+```pwsh
+cd src/AzureArchitectureStudio.Web
+npm install
+npm run dev
+```
 
-To launch and debug the code locally, set `AzureArchitectureStudio.Server` as the startup project in Visual Studio 2022. 
+**Server (ASP.NET Core .NET 10):**
+
+```pwsh
+cd src/AzureArchitectureStudio.Server
+dotnet run --urls "https://localhost:7203;http://localhost:5203"
+```
+
+Or open `src/AzureArchitectureStudio.sln` in Visual Studio 2022, set `AzureArchitectureStudio.Server` as the startup project and press F5. Vite is configured to proxy API and gRPC calls to the server during development.
+
+### Configuring Azure Import (optional)
+
+The Azure Import feature requires an Entra ID app registration with delegated `https://management.azure.com/user_impersonation` permission and a SPA redirect URI matching your dev origin. Configure the client and tenant IDs in `src/AzureArchitectureStudio.Web/src/services/auth-config.ts` before signing in.
 
 ## Frameworks and Libraries
 
 Azure Architecture Studio is built on top of the following frameworks and libraries:
 
-- [Ant Design Blazor](https://antblazor.com/en-US/)
-- [Blazor.Diagrams](https://github.com/Blazor-Diagrams/Blazor.Diagrams)
-- [AutoMapper](https://automapper.org/)
-- [BlazorApplicationInsights](https://github.com/IvanJosipovic/BlazorApplicationInsights)
+**Front-end (`AzureArchitectureStudio.Web`):**
+
+- [React 19](https://react.dev/) + [TypeScript 5](https://www.typescriptlang.org/) + [Vite 6](https://vitejs.dev/)
+- [@xyflow/react](https://reactflow.dev/) v12 — diagram canvas
+- [Fluent UI v9](https://react.fluentui.dev/) (`@fluentui/react-components`, `@fluentui/react-icons`)
+- [@azure/msal-browser](https://github.com/AzureAD/microsoft-authentication-library-for-js) + `@azure/msal-react` — Entra ID sign-in for Azure Import
+- [elkjs](https://github.com/kieler/elkjs) — automatic graph layout
+- [html-to-image](https://github.com/bubkoo/html-to-image) — PNG/JPEG export of diagrams
+- [react-router-dom v7](https://reactrouter.com/)
+
+**Server (`AzureArchitectureStudio.Server` / .NET 10):**
+
+- ASP.NET Core 10 (Minimal APIs + gRPC-Web)
+- [Microsoft.Identity.Web](https://github.com/AzureAD/microsoft-identity-web) — server-side auth
+- [Azure.Identity](https://github.com/Azure/azure-sdk-for-net) + [Azure.ResourceManager.Resources](https://github.com/Azure/azure-sdk-for-net) — ARM operations
+- [Azure.AI.OpenAI](https://github.com/Azure/azure-sdk-for-net) — AI-assisted suggestions
+- [Azure.Bicep.Decompiler](https://github.com/Azure/bicep) — ARM ↔ Bicep
+- [Entity Framework Core 10](https://learn.microsoft.com/ef/core/) (SQL Server / InMemory)
+- [Microsoft.ApplicationInsights.AspNetCore](https://github.com/microsoft/ApplicationInsights-dotnet)
+
+**Shared / build-time:**
+
+- [Blazor.Diagrams](https://github.com/Blazor-Diagrams/Blazor.Diagrams) — retained as a vendored reference for the Azure resource graph and IaC source generation
+- Roslyn source generators (`AzureArchitectureStudio.SourceGeneration`) that emit Azure node DTOs from the curated resource catalog
 
 ## Disclaimer
 

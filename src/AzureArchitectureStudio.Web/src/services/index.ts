@@ -7,6 +7,7 @@ export {
   listResourcesInSubscription,
   listResourcesInResourceGroup,
   listSubscriptionsUnderManagementGroup,
+  enrichResourcesWithFullProperties,
   getArmAccessToken,
   type AzureSubscription,
   type AzureResourceGroup,

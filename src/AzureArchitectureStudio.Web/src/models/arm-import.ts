@@ -351,7 +351,19 @@ function inferEdges(
 
   for (const r of resources) {
     const sourceId = armIdToNodeId.get(r.id.toLowerCase());
-    if (!sourceId || !r.properties) continue;
+    if (!sourceId) continue;
+
+    // 0. Child-resource → parent-resource link. A vnet-link belongs to a
+    //    private DNS zone, a NIC ipConfig.privateLinkConnectionProperties
+    //    belongs to its endpoint, etc. Whenever the resource id itself
+    //    contains another imported resource further up the chain, draw
+    //    an edge to that parent.
+    for (const parent of parentArmIds(r.id.toLowerCase())) {
+      const hit = armIdToNodeId.get(parent);
+      if (hit) pushEdge(sourceId, hit);
+    }
+
+    if (!r.properties) continue;
 
     // 1. Direct ARM-ID references anywhere in properties.
     const refs = collectArmIdReferences(r.properties);

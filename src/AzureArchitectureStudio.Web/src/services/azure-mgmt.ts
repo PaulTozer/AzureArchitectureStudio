@@ -210,3 +210,45 @@ function extractArmPath(absoluteUrl: string): string | null {
   }
 }
 
+/**
+ * Fetch full per-resource details for each id, replacing the `properties`
+ * field on the corresponding entry in the input list. Best-effort:
+ * resources whose api-version is unknown or whose GET fails are returned
+ * unchanged.
+ *
+ * @param resources Resources from `listResourcesIn*` (basic listing).
+ * @param apiVersionForType A function returning a per-type API version.
+ */
+export async function enrichResourcesWithFullProperties(
+  resources: AzureArmResource[],
+  apiVersionForType: (armType: string) => string | undefined,
+  concurrency: number = 8,
+): Promise<AzureArmResource[]> {
+  const out = resources.slice();
+  let i = 0;
+  const workers: Promise<void>[] = [];
+  const fetchOne = async (idx: number) => {
+    const r = out[idx];
+    const apiVersion = apiVersionForType(r.type) ?? '2022-09-01';
+    try {
+      const data = await armFetch<AzureArmResource>(r.id, apiVersion);
+      if (data && data.properties) {
+        out[idx] = { ...r, properties: data.properties };
+      }
+    } catch {
+      // Best-effort: keep the original.
+    }
+  };
+  const next = async () => {
+    while (i < out.length) {
+      const my = i++;
+      await fetchOne(my);
+    }
+  };
+  for (let k = 0; k < Math.min(concurrency, out.length); k++) {
+    workers.push(next());
+  }
+  await Promise.all(workers);
+  return out;
+}
+
