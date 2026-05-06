@@ -225,11 +225,27 @@ export async function enrichResourcesWithFullProperties(
   concurrency: number = 8,
 ): Promise<AzureArmResource[]> {
   const out = resources.slice();
+
+  // For any ARM type we don't know via the curated registry, ask Azure
+  // what api versions exist for that namespace and pick the most recent
+  // stable one. We cache the per-namespace lookup so we never hit ARM
+  // more than once per provider per import.
+  const providerLookup = await buildProviderApiVersionLookup(resources);
+
   let i = 0;
   const workers: Promise<void>[] = [];
+  const resolveApiVersion = (armType: string): string => {
+    const fromCurated = apiVersionForType(armType);
+    if (fromCurated) return fromCurated;
+    const fromProvider = providerLookup.get(armType.toLowerCase());
+    if (fromProvider) return fromProvider;
+    // Last-ditch generic fallback. Will likely 400 for some types but
+    // we already tried the curated map and the provider catalog.
+    return '2022-09-01';
+  };
   const fetchOne = async (idx: number) => {
     const r = out[idx];
-    const apiVersion = apiVersionForType(r.type) ?? '2022-09-01';
+    const apiVersion = resolveApiVersion(r.type);
     try {
       const data = await armFetch<AzureArmResource>(r.id, apiVersion);
       if (data && data.properties) {
@@ -250,5 +266,62 @@ export async function enrichResourcesWithFullProperties(
   }
   await Promise.all(workers);
   return out;
+}
+
+/**
+ * Build a per-ARM-type api-version lookup by asking ARM what apiVersions
+ * are registered for each namespace seen in `resources`. Falls back to
+ * an empty map on any failure.
+ */
+async function buildProviderApiVersionLookup(
+  resources: AzureArmResource[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+
+  // Group namespaces -> a sample subscription id so we can scope the
+  // provider GET (the tenant-level providers endpoint sometimes omits
+  // apiVersions; subscription scope is reliable).
+  const namespaceToSub = new Map<string, string>();
+  for (const r of resources) {
+    const ns = r.type.split('/')[0];
+    if (!ns) continue;
+    if (!namespaceToSub.has(ns.toLowerCase())) {
+      const sub = /\/subscriptions\/([^/]+)/i.exec(r.id)?.[1];
+      if (sub) namespaceToSub.set(ns.toLowerCase(), sub);
+    }
+  }
+
+  await Promise.all(
+    Array.from(namespaceToSub.entries()).map(async ([nsLower, sub]) => {
+      // Find the canonical-cased namespace from the first resource.
+      const sample = resources.find((r) => r.type.toLowerCase().startsWith(nsLower + '/'));
+      const ns = sample ? sample.type.split('/')[0] : nsLower;
+      try {
+        interface ProviderResponse {
+          resourceTypes?: Array<{
+            resourceType?: string;
+            apiVersions?: string[];
+          }>;
+        }
+        const data = await armFetch<ProviderResponse>(
+          `/subscriptions/${sub}/providers/${ns}`,
+          '2022-09-01',
+        );
+        if (!data?.resourceTypes) return;
+        for (const rt of data.resourceTypes) {
+          if (!rt.resourceType || !rt.apiVersions || rt.apiVersions.length === 0) continue;
+          const fullType = `${ns}/${rt.resourceType}`.toLowerCase();
+          // apiVersions are typically returned newest-first; prefer the
+          // first non-preview, otherwise take the first entry.
+          const stable = rt.apiVersions.find((v) => !/preview|alpha|beta/i.test(v));
+          result.set(fullType, stable ?? rt.apiVersions[0]);
+        }
+      } catch {
+        // ignore — type will get the generic fallback.
+      }
+    }),
+  );
+
+  return result;
 }
 

@@ -60,4 +60,11 @@ export interface LinkModelDto {
 
 // React Flow typed aliases
 export type AzureNode = Node<AzureNodeData>;
-export type AzureEdge = Edge;
+
+/** Custom edge data we attach to React Flow edges (waypoints, etc.). */
+export interface AzureEdgeData extends Record<string, unknown> {
+  /** Optional ordered list of canvas-space points the edge routes through. */
+  waypoints?: Array<{ x: number; y: number }>;
+}
+
+export type AzureEdge = Edge<AzureEdgeData>;

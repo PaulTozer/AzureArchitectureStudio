@@ -17,6 +17,9 @@ import {
 import { resolveKey } from './resource-registry';
 import type { AzureArmResource } from '../services/azure-mgmt';
 import type { AzureServiceModel } from './stencil';
+import { subnetNodeId } from '../hooks/useSubnetSync';
+
+const SUBNET_ICON = 'assets/azure-icons/networking/02742-icon-service-Subnet.svg';
 
 /** Stencil model duplicated minimally to avoid a wider import. */
 export interface IconCatalogEntry {
@@ -182,6 +185,13 @@ export function buildNodesFromArmResources(
   // armId (lowercased) -> nodeId, used to resolve cross-references after
   // every node has been created.
   const armIdToNodeId = new Map<string, string>();
+  // subnet ARM id (lowercased, full subnet path) -> subnet node id.
+  // Used by the re-parenting pass so resources that reference a subnet
+  // (PE, NIC, Container App env, etc.) become children of that subnet
+  // group rather than floating in the resource group.
+  const subnetArmIdToNodeId = new Map<string, string>();
+  // vnet ARM id (lowercased) -> vnet node id, for fall-back re-parenting.
+  const vnetArmIdToNodeId = new Map<string, string>();
   let rgIdSeq = 0;
   let nodeIdSeq = 0;
   let col = 0;
@@ -242,6 +252,7 @@ export function buildNodesFromArmResources(
       const importedProps: Record<string, unknown> = {
         ...getDefaultProperties(typeKey),
       };
+      let dynamicGroupDims: { width: number; height: number } | undefined;
       if (isGroup && typeKey === 'virtual-networks' && r.properties) {
         const subs = (r.properties as { subnets?: Array<Record<string, unknown>> }).subnets;
         if (Array.isArray(subs)) {
@@ -252,6 +263,19 @@ export function buildNodesFromArmResources(
               (s.addressPrefix as string) ??
               '',
           }));
+          // Size the VNet container so all subnets fit side-by-side
+          // without overlapping (useSubnetSync places them horizontally).
+          const SUBNET_W = 200;
+          const SUBNET_GAP = 12;
+          const SIDE_PAD = 16;
+          const HEADER = 36;
+          const SUBNET_H = 160;
+          const w = Math.max(
+            280,
+            SIDE_PAD * 2 + Math.max(1, subs.length) * SUBNET_W + (Math.max(1, subs.length) - 1) * SUBNET_GAP,
+          );
+          const h = HEADER + SIDE_PAD * 2 + SUBNET_H;
+          dynamicGroupDims = { width: w, height: h };
         }
         const space = (r.properties as { addressSpace?: { addressPrefixes?: string[] } })
           .addressSpace?.addressPrefixes;
@@ -259,6 +283,7 @@ export function buildNodesFromArmResources(
           importedProps.addressSpace = space.join(', ');
         }
       }
+      const finalGroupDims = dynamicGroupDims ?? groupDims;
 
       out.push({
         id: nodeId,
@@ -274,12 +299,49 @@ export function buildNodesFromArmResources(
           isValid: true,
           properties: importedProps,
         } satisfies AzureNodeData,
-        ...(isGroup && groupDims
-          ? { style: { width: groupDims.width, height: groupDims.height } }
+        ...(isGroup && finalGroupDims
+          ? { style: { width: finalGroupDims.width, height: finalGroupDims.height } }
           : {}),
       } as AzureNode);
       imported++;
       childIdx++;
+
+      // For VNets, materialise a subnet group node for each subnet so
+      // they exist in the graph at layout-time. useSubnetSync will later
+      // reconcile them (preserving these by id) instead of synthesising.
+      if (isGroup && typeKey === 'virtual-networks') {
+        vnetArmIdToNodeId.set(r.id.toLowerCase(), nodeId);
+        const subs = (importedProps.subnets as Array<{ name?: string; addressPrefix?: string }>)
+          ?? [];
+        const SUBNET_W = 200;
+        const SUBNET_H = 160;
+        const SUBNET_GAP = 12;
+        const SIDE_PAD = 16;
+        const HEADER = 36;
+        for (let si = 0; si < subs.length; si++) {
+          const s = subs[si];
+          const subnetId = subnetNodeId(nodeId, si);
+          const subnetArmId = `${r.id}/subnets/${s.name ?? ''}`.toLowerCase();
+          subnetArmIdToNodeId.set(subnetArmId, subnetId);
+          out.push({
+            id: subnetId,
+            type: 'azureGroup',
+            position: { x: SIDE_PAD + si * (SUBNET_W + SUBNET_GAP), y: HEADER + SIDE_PAD },
+            parentId: nodeId,
+            extent: 'parent',
+            data: {
+              typeKey: 'subnet',
+              imagePath: SUBNET_ICON,
+              name: s.name || `Subnet ${si + 1}`,
+              location: '',
+              useResourceGroupLocation: true,
+              isValid: true,
+              properties: { addressPrefix: s.addressPrefix ?? '' },
+            } satisfies AzureNodeData,
+            style: { width: SUBNET_W, height: SUBNET_H },
+          } as AzureNode);
+        }
+      }
     }
 
     // Auto-grow RG height if more children than fit in the default size.
@@ -293,19 +355,260 @@ export function buildNodesFromArmResources(
   // Infer edges from ARM cross-references in resource properties.
   const edges = inferEdges(resources, armIdToNodeId, importStamp);
 
+  // Re-parenting pass: move resources that reference a subnet (PE, NIC,
+  // Container App env, App Service, etc.) into that subnet's group node,
+  // and move private DNS zones into the vnet that any of their vnet-link
+  // children point at. This makes the diagram visually represent the
+  // actual networking layout.
+  reparentNetworkResources(out, resources, armIdToNodeId, subnetArmIdToNodeId, vnetArmIdToNodeId);
+
+  // Ensure parents precede children — React Flow v12 requires this order.
+  const ordered = orderParentsFirst(out);
+
+  // Drop edges that connect a node to one of its own ancestors (or vice
+  // versa). After re-parenting an NSG into a subnet, the NSG → subnet
+  // and NSG → vnet edges are redundant — the containment already shows
+  // the relationship.
+  const filteredEdges = removeAncestorDescendantEdges(edges, ordered);
+
+  // Collapse duplicate edges between the same pair of nodes (regardless
+  // of direction). e.g. a private endpoint's serviceConnections produces
+  // PE → DB, and the DB's privateEndpointConnections produces DB → PE —
+  // both describe the same physical link, so we keep only one.
+  const dedupedEdges = dedupeEdgesByEndpointPair(filteredEdges);
+
   const unknown = Array.from(unknownCounts.entries())
     .map(([type, count]) => ({ type, count }))
     .sort((a, b) => b.count - a.count);
 
   return {
-    nodes: out,
-    edges,
+    nodes: ordered,
+    edges: dedupedEdges,
     unknown,
     total: resources.length,
     // Count every imported resource (groups + nodes), excluding the
     // synthesised resource-group containers we created up-front.
-    imported: out.filter((n) => !n.id.startsWith(`imp-rg-${importStamp}`)).length,
+    imported: ordered.filter((n) => !n.id.startsWith(`imp-rg-${importStamp}`)).length,
   };
+}
+
+/**
+ * Return a copy of `nodes` ordered such that each node appears AFTER its
+ * parent (React Flow v12 requirement).
+ */
+function orderParentsFirst(nodes: AzureNode[]): AzureNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const visited = new Set<string>();
+  const ordered: AzureNode[] = [];
+  const visit = (n: AzureNode) => {
+    if (visited.has(n.id)) return;
+    if (n.parentId && byId.has(n.parentId)) visit(byId.get(n.parentId)!);
+    visited.add(n.id);
+    ordered.push(n);
+  };
+  for (const n of nodes) visit(n);
+  return ordered;
+}
+
+/**
+ * Drop edges where one endpoint is an ancestor of the other. After
+ * re-parenting, e.g. an NSG that lives inside a subnet that lives inside
+ * a vnet has containment edges to both — drawing explicit edges as well
+ * just adds visual noise.
+ */
+function removeAncestorDescendantEdges(edges: AzureEdge[], nodes: AzureNode[]): AzureEdge[] {
+  const parentOf = new Map<string, string | undefined>();
+  for (const n of nodes) parentOf.set(n.id, n.parentId);
+  const isAncestor = (maybeAncestor: string, ofNode: string): boolean => {
+    let cur: string | undefined = parentOf.get(ofNode);
+    while (cur) {
+      if (cur === maybeAncestor) return true;
+      cur = parentOf.get(cur);
+    }
+    return false;
+  };
+  return edges.filter(
+    (e) => !isAncestor(e.source, e.target) && !isAncestor(e.target, e.source),
+  );
+}
+
+/**
+ * Collapse edges so each unordered pair {a, b} of node ids appears at
+ * most once. Self-loops (a == b) are dropped entirely. The first edge
+ * encountered for a given pair wins; subsequent ones are discarded.
+ *
+ * This kills the very common case where two resources cross-reference
+ * each other (e.g. a private endpoint and the resource it targets), so
+ * inferEdges produces both A→B and B→A even though they represent the
+ * same physical relationship.
+ */
+function dedupeEdgesByEndpointPair(edges: AzureEdge[]): AzureEdge[] {
+  const seen = new Set<string>();
+  const out: AzureEdge[] = [];
+  for (const e of edges) {
+    if (e.source === e.target) continue; // ignore self-loops
+    const key = e.source < e.target ? `${e.source}|${e.target}` : `${e.target}|${e.source}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+/**
+ * For each non-group resource, scan its properties for a subnet ARM id;
+ * if found AND the subnet was imported, set the node's parentId to that
+ * subnet's node id. As a fallback, attach to the vnet itself. Private
+ * DNS zones are re-parented into the vnet via their vnet-link children.
+ */
+function reparentNetworkResources(
+  nodes: AzureNode[],
+  resources: AzureArmResource[],
+  armIdToNodeId: Map<string, string>,
+  subnetArmIdToNodeId: Map<string, string>,
+  vnetArmIdToNodeId: Map<string, string>,
+): void {
+  const armById = new Map(resources.map((r) => [r.id.toLowerCase(), r] as const));
+  const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
+
+  // Collect, for each DNS zone (by node id), the set of vnet node ids
+  // that any of its vnet-link children reference.
+  const dnsZoneToVnets = new Map<string, Set<string>>();
+  for (const r of resources) {
+    if (r.type.toLowerCase() !== 'microsoft.network/privatednszones/virtualnetworklinks') continue;
+    if (!r.properties) continue;
+    const vnetIdRef = (
+      (r.properties as { virtualNetwork?: { id?: string } }).virtualNetwork?.id ?? ''
+    ).toLowerCase();
+    if (!vnetIdRef) continue;
+    const vnetNodeId = vnetArmIdToNodeId.get(vnetIdRef);
+    if (!vnetNodeId) continue;
+    // Parent zone ARM id is everything before /virtualNetworkLinks/...
+    const parentZoneArm = r.id.toLowerCase().split('/virtualnetworklinks/')[0];
+    const zoneNodeId = armIdToNodeId.get(parentZoneArm);
+    if (!zoneNodeId) continue;
+    if (!dnsZoneToVnets.has(zoneNodeId)) dnsZoneToVnets.set(zoneNodeId, new Set());
+    dnsZoneToVnets.get(zoneNodeId)!.add(vnetNodeId);
+  }
+
+  // Track how many children have already been pushed into each parent,
+  // so we can offset subsequent children rather than stacking at (0,0).
+  const childCountByParent = new Map<string, number>();
+
+  for (const node of nodes) {
+    // Skip groups except DNS zones (handled below).
+    const data = node.data as AzureNodeData | undefined;
+    if (!data) continue;
+
+    // DNS zone re-parenting.
+    if (data.typeKey === 'private-dns-zones') {
+      const targetVnets = dnsZoneToVnets.get(node.id);
+      if (targetVnets && targetVnets.size > 0) {
+        const target = targetVnets.values().next().value!;
+        node.parentId = target;
+        const idx = childCountByParent.get(target) ?? 0;
+        childCountByParent.set(target, idx + 1);
+        node.position = { x: 16 + idx * 110, y: 200 };
+      }
+      continue;
+    }
+    if (node.type === 'azureGroup') continue;
+    if (node.id.startsWith('imp-rg-')) continue;
+
+    // Allowlist of resource kinds that genuinely "live inside" a subnet
+    // (their identity is bound to a subnet, OR they are decorations like
+    // NSGs / route tables that we render pinned to the subnet's corner).
+    // Anything else that mentions a subnet ARM id is a back-reference
+    // and should stay at the resource-group level with edges only.
+    const REPARENT_INTO_SUBNET: ReadonlySet<string> = new Set([
+      'private-endpoints',
+      'network-interfaces',
+      'container-apps-environments',
+      'application-gateway',
+      'azure-firewall',
+      'bastion-hosts',
+      'vpn-gateway',
+      'expressroute-gateway',
+      'virtual-network-gateways',
+      'nsg',
+      'route-table',
+      'route-tables',
+    ]);
+    if (!REPARENT_INTO_SUBNET.has(data.typeKey)) continue;
+
+    // Find this node's source ARM resource by reverse lookup.
+    let armId: string | undefined;
+    for (const [aid, nid] of armIdToNodeId) {
+      if (nid === node.id) {
+        armId = aid;
+        break;
+      }
+    }
+    if (!armId) continue;
+    const r = armById.get(armId);
+    if (!r?.properties) continue;
+
+    const subnetRefs = collectSubnetReferences(r.properties);
+    let target: string | undefined;
+    for (const ref of subnetRefs) {
+      const hit = subnetArmIdToNodeId.get(ref);
+      if (hit) {
+        target = hit;
+        break;
+      }
+    }
+    if (!target) {
+      // Fallback: vnet referenced anywhere in properties.
+      for (const ref of subnetRefs) {
+        // Strip the trailing /subnets/<name> to get the vnet ARM id.
+        const vnetArm = ref.split('/subnets/')[0];
+        const hit = vnetArmIdToNodeId.get(vnetArm);
+        if (hit) {
+          target = hit;
+          break;
+        }
+      }
+    }
+    if (target && nodeById.has(target) && target !== node.parentId) {
+      node.parentId = target;
+      const idx = childCountByParent.get(target) ?? 0;
+      childCountByParent.set(target, idx + 1);
+      node.position = { x: 16 + idx * 110, y: 36 };
+
+      // NSGs and route tables are decorations — render them as a small
+      // badge in the bottom-left corner of their host subnet/vnet rather
+      // than at full node size.
+      if (data.typeKey === 'nsg' || data.typeKey === 'route-table' || data.typeKey === 'route-tables') {
+        node.data = {
+          ...data,
+          binding: { corner: 'bottom-left' },
+        } as AzureNodeData;
+      }
+    }
+  }
+}
+
+/**
+ * Walk a property tree collecting any ARM IDs that look like a subnet
+ * reference (ending in `/subnets/<name>`). Returns lowercased ids.
+ */
+function collectSubnetReferences(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') {
+    if (/^\/subscriptions\//i.test(value) && /\/subnets\/[^/]+$/i.test(value)) {
+      out.push(value.toLowerCase());
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectSubnetReferences(item, out);
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectSubnetReferences(v, out);
+    }
+  }
+  return out;
 }
 
 /**

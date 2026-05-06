@@ -633,7 +633,7 @@ export default function DiagramPanel() {
         }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: 'deletable' }}
+        defaultEdgeOptions={{ type: 'deletable', interactionWidth: 24 }}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
         minZoom={0.5}
