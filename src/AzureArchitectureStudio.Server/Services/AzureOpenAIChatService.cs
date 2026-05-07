@@ -648,8 +648,26 @@ You have ONE turn to finish the build. The user cannot "let you continue" — on
 - **NEVER** end a turn with the design half-built. If management groups exist but subscriptions don't, KEEP CALLING add_node. If subscriptions exist but resource groups don't, KEEP CALLING add_node. If RGs exist but they're empty of resources, KEEP CALLING add_node. Only stop when every layer of the hierarchy described in the relevant section above is fully populated.
 - Your final text reply should describe what was built (past tense), NOT what you're about to build. If a layer is missing, the answer is more tool calls, not a promise to do them later.
 
+## Critical: NEVER call clear_diagram to "start over"
+`clear_diagram` is ONLY for cases where the user explicitly says "start over", "clear the canvas", "wipe everything and start fresh", etc. The server enforces this by refusing any second `clear_diagram` call within a single turn.
+
+If you find yourself reasoning "let me clear and try again":
+- **STOP.** Do not clear. Keep building on top of what's already there.
+- If a node has unsatisfied REQUIRED dependencies that you cannot fix (e.g. the catalog doesn't contain the type you need, or the dependency is genuinely circular), accept the warning, mention it briefly in your final reply ("Note: aks-cluster needs X but the catalog has no matching type — left unwired."), and move on.
+- Restarting wastes the user's time and produces worse results because each restart loses context. Always prefer "patch what's there" over "rebuild from scratch".
+
 # Azure landing zone (CAF) hierarchy
-When the user asks for an "Azure landing zone", "enterprise-scale landing zone", "CAF landing zone", or similar, follow Microsoft Cloud Adoption Framework Enterprise-Scale.
+The instructions below apply ONLY when the user asks for a full landing zone build (phrases like "full landing zone", "enterprise-scale landing zone", "CAF landing zone", "build me a landing zone", etc.).
+
+**If the user asks for something narrower, respect that scope and DO NOT build the full landing zone.** Examples:
+- "Show me the management group structure" / "draw the MG hierarchy" / "CAF management groups" → build ONLY the management-group tree (Tenant Root + child MGs connected by arrows). Do NOT add subscriptions, resource groups, or platform resources unless they're part of the MG diagram itself.
+- "Add the platform subscriptions" → add only the subscription containers under their MGs; don't fill them with RGs / resources unless asked.
+- "Build the connectivity hub" → build only the hub VNet + firewall + bastion + DNS zones, not the rest of the landing zone.
+- "Show the policy assignments for landing zones" → answer informationally; don't build the full diagram.
+
+When in doubt about scope, build the smaller / more literal interpretation of the request and mention in your reply what else you could add next. Do NOT proactively expand a narrow request into a full landing-zone build.
+
+When the user does ask for a full landing zone, follow Microsoft Cloud Adoption Framework Enterprise-Scale.
 
 **IMPORTANT — render management groups as a TREE, not as nested boxes:**
 - `management-groups` is a LEAF node type (small icon + label), not a container. Do NOT pass `parentId` between management groups, and do NOT try to nest one MG inside another — they will visually overlap.
@@ -1028,6 +1046,25 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
 
                 case "clear_diagram":
                 {
+                    // Hard guard against the model getting into a
+                    // "start over" loop when it can't satisfy a required
+                    // dependency. Allow at most ONE clear per turn; any
+                    // further calls return an error string instead of
+                    // wiping the canvas, which forces the model to keep
+                    // building on top of what it already has.
+                    request.ClearCount++;
+                    if (request.ClearCount > 1)
+                    {
+                        _logger.LogWarning("Refusing repeated clear_diagram call (count={Count}).", request.ClearCount);
+                        return (
+                            "clear_diagram refused: you have already cleared the canvas once this turn. " +
+                            "Do NOT start over again. Keep building on the current snapshot — if a node has " +
+                            "unsatisfied required dependencies that you genuinely cannot fix (e.g. the catalog " +
+                            "does not contain the needed type), leave the warning in place, mention it briefly " +
+                            "in your final reply, and move on.",
+                            null,
+                            null);
+                    }
                     request.Nodes.Clear();
                     request.Edges.Clear();
                     return ("ok", new DiagramAction { Type = "clear_diagram" }, null);

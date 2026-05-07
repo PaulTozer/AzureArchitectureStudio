@@ -80,6 +80,15 @@ public class ChatRequest
     public List<DiagramNodeSnapshot> Nodes { get; set; } = new();
     public List<DiagramEdgeSnapshot> Edges { get; set; } = new();
     public List<AvailableService> AvailableServices { get; set; } = new();
+
+    /// <summary>
+    /// Server-side counter (not deserialised from the client) used by
+    /// the chat service to refuse repeated clear_diagram calls within a
+    /// single turn. Prevents the model getting stuck in a "start over"
+    /// loop when it can't satisfy a required dependency.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int ClearCount { get; set; }
 }
 
 /// <summary>An action the client should apply to the diagram after rendering the assistant message.</summary>

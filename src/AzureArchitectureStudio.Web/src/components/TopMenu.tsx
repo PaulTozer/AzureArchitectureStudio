@@ -38,6 +38,9 @@ import {
   SparkleRegular,
   SettingsRegular,
   AutoFitWidthRegular,
+  CloudRegular,
+  BranchRegular,
+  BranchForkRegular,
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
@@ -233,19 +236,54 @@ export default function TopMenu() {
             New
           </ToolbarButton>
 
-          {/* Import from Azure */}
-          <ToolbarButton
-            icon={<ArrowImportRegular />}
-            onClick={() => {
-              if (!isAuthenticated) {
-                showToast('Sign in with Azure to import existing resources.', 'warning');
-                return;
-              }
-              setImportDialogOpen(true);
-            }}
-          >
-            Import
-          </ToolbarButton>
+          {/* Import menu */}
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <ToolbarButton icon={<ArrowImportRegular />}>
+                Import
+              </ToolbarButton>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem
+                  icon={<CloudRegular />}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      showToast('Sign in with Azure to import existing resources.', 'warning');
+                      return;
+                    }
+                    setImportDialogOpen(true);
+                  }}
+                >
+                  Import from Azure
+                </MenuItem>
+                <MenuItem
+                  icon={<FolderOpenRegular />}
+                  onClick={() => {
+                    showToast('Local file import (Bicep / Terraform) is not implemented yet.', 'info');
+                  }}
+                >
+                  Local file (Bicep, Terraform)
+                </MenuItem>
+                <MenuItem
+                  icon={<BranchRegular />}
+                  onClick={() => {
+                    showToast('Azure DevOps import is not implemented yet.', 'info');
+                  }}
+                >
+                  Azure DevOps
+                </MenuItem>
+                <MenuItem
+                  icon={<BranchForkRegular />}
+                  onClick={() => {
+                    showToast('GitHub repository import is not implemented yet.', 'info');
+                  }}
+                >
+                  GitHub Repository
+                </MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
 
           {/* Auto-arrange */}
           <ToolbarButton
