@@ -102,6 +102,7 @@ public class AzureOpenAIChatService : IChatService
         // a full CAF landing-zone build without risking runaway.
         const int MaxIterations = 40;
         var hitCap = false;
+        var continueNudgesUsed = 0;
         for (var step = 0; step < MaxIterations; step++)
         {
             // On the final iteration, force the model to wrap up rather
@@ -188,6 +189,26 @@ public class AzureOpenAIChatService : IChatService
 
             // Normal text completion — done
             var text = completion.Content.Count > 0 ? completion.Content[0].Text : string.Empty;
+
+            // Guard against the model promising to "continue later" while
+            // leaving the build incomplete. If the final text contains a
+            // continuation phrase, force one more tool-calling round with
+            // an explicit system reminder. Limit to a small number of
+            // re-prompts so we never loop indefinitely on a stubborn model.
+            if (LooksLikeContinuationPromise(text) && continueNudgesUsed < 3)
+            {
+                continueNudgesUsed++;
+                _logger.LogInformation(
+                    "Detected continuation promise in assistant reply; forcing another tool round (nudge {Count}/3).",
+                    continueNudgesUsed);
+                messages.Add(new AssistantChatMessage(text));
+                messages.Add(new UserChatMessage(
+                    "(System note: Do NOT promise to continue in another message — there is no next turn. " +
+                    "Finish the build right now by calling add_node / connect_nodes for every remaining layer of the design (subscriptions under management groups, resource groups under subscriptions, actual resources inside resource groups, subnets inside VNets, etc.) before emitting your final text reply.")
+                );
+                continue;
+            }
+
             var ok = new ChatResponse
             {
                 Success = true,
@@ -214,6 +235,49 @@ public class AzureOpenAIChatService : IChatService
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+
+    /// <summary>
+    /// Detects assistant replies that promise to keep building in a future
+    /// turn rather than finishing the work now. When this returns true the
+    /// service injects a system reminder and re-runs the model.
+    /// </summary>
+    private static bool LooksLikeContinuationPromise(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        // Lower-case once for cheap substring checks.
+        var t = text.ToLowerInvariant();
+        string[] phrases =
+        [
+            "continuing build",
+            "i'll continue",
+            "i will continue",
+            "i'll add the rest",
+            "i will add the rest",
+            "next, i will add",
+            "next i will add",
+            "next, i'll add",
+            "next i'll add",
+            "next, i will build",
+            "next i will build",
+            "i'll proceed to add",
+            "i will proceed to add",
+            "let me know to proceed",
+            "let me know if you want me to continue",
+            "shall i continue",
+            "should i continue",
+            "in the next message",
+            "in the next turn",
+            "in a follow-up",
+            "in a follow up",
+            "i'll keep going",
+            "i will keep going",
+        ];
+        foreach (var p in phrases)
+        {
+            if (t.Contains(p)) return true;
+        }
+        return false;
+    }
 
     // The catalog uses both singular and plural forms (e.g. 'virtual-networks',
     // 'resource-groups', 'private-endpoints' but 'subnet', 'sql-server', 'sql-database').
@@ -532,6 +596,13 @@ For multi-tier requests (landing zones, hub-spoke networks, multi-region apps, e
 4. Leaf resources (the actual services that live inside the inner containers).
 
 After every batch of `add_node` calls, mentally re-read the snapshot. If ANY container is empty when it shouldn't be (e.g. you added a "Platform" management group but no Identity/Management/Connectivity subscriptions under it; or a "Connectivity" subscription with no hub-vnet RG inside; or a hub-vnet RG with no actual hub VNet, firewall, bastion etc.) — KEEP CALLING add_node in the same turn. Only emit your final text reply when every container has appropriate contents.
+
+## Critical: NEVER promise to continue later
+You have ONE turn to finish the build. The user cannot "let you continue" — once you stop calling tools and emit a text reply, the turn is over and the conversation moves on. Therefore:
+
+- **NEVER** say things like "I'll continue building", "Continuing build…", "Next, I will add subscriptions", "let me know to proceed", or "I'll add the rest in the next message". These phrases are FORBIDDEN. If you catch yourself about to write one, instead immediately make more tool calls to finish the work right now.
+- **NEVER** end a turn with the design half-built. If management groups exist but subscriptions don't, KEEP CALLING add_node. If subscriptions exist but resource groups don't, KEEP CALLING add_node. If RGs exist but they're empty of resources, KEEP CALLING add_node. Only stop when every layer of the hierarchy described in the relevant section above is fully populated.
+- Your final text reply should describe what was built (past tense), NOT what you're about to build. If a layer is missing, the answer is more tool calls, not a promise to do them later.
 
 # Azure landing zone (CAF) hierarchy
 When the user asks for an "Azure landing zone", "enterprise-scale landing zone", "CAF landing zone", or similar, follow Microsoft Cloud Adoption Framework Enterprise-Scale. The full structure to build (use exactly these typeKeys: `management-groups`, `subscriptions`, `resource-group`):

@@ -36,6 +36,8 @@ import {
   type AzureNode,
 } from '../../models';
 import { subnetNodeId } from '../../hooks/useSubnetSync';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ChatDrawer.css';
 
 interface ChatDrawerProps {
@@ -607,7 +609,22 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
 
             {messages.map((m, i) => (
               <div key={i} className={`chat-bubble ${m.role}`}>
-                {m.content || (m.role === 'assistant' ? '(no response)' : '')}
+                {m.role === 'assistant' && m.content ? (
+                  <div className="chat-md">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                        ),
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  m.content || (m.role === 'assistant' ? '(no response)' : '')
+                )}
                 {m.actionsSummary && (
                   <div className="chat-actions-summary">{m.actionsSummary}</div>
                 )}
