@@ -264,10 +264,22 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
               const vnetIdMatch = parentIdResolved.split('__subnet__')[0];
               next = next.map((n) => {
                 if (n.id !== vnetIdMatch) return n;
+                // useSubnetSync divides VNet width equally across ALL
+                // subnets in the VNet. So to fit `childCount` leaves in
+                // ONE subnet we must scale the whole VNet by the total
+                // subnet count, not just by this subnet's child count.
+                const data = n.data as AzureNodeData;
+                const subnetsArr =
+                  (data.properties?.subnets as Array<{ name?: string }> | undefined) ?? [];
+                const subnetCount = Math.max(1, subnetsArr.length);
                 const childCount = (childIndexByParent.get(parentIdResolved) ?? 1);
-                // Subnet inner = vnetWidth - 24 (subnet padding). Children
-                // tile at startX=12 with LEAF_W (96) + 12 gap. Add 36 slack.
-                const minWidth = 24 + 12 + childCount * (LEAF_W + 12) + 36;
+                // Per-subnet inner: 12 left pad + childCount*(LEAF_W+12) + 12 right pad.
+                // Required per-subnet width = 24 + childCount*(LEAF_W+12).
+                const requiredSubnetW = 24 + childCount * (LEAF_W + 12);
+                // useSubnetSync: subnetW = (vnetW - 24 - 8*(N-1)) / N
+                // → vnetW = subnetW * N + 8*(N-1) + 24
+                const minWidth =
+                  requiredSubnetW * subnetCount + 8 * (subnetCount - 1) + 24;
                 const minHeight = 220;
                 const curW = (n.style?.width as number | undefined) ?? 250;
                 const curH = (n.style?.height as number | undefined) ?? 200;

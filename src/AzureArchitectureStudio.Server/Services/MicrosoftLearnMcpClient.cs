@@ -91,7 +91,7 @@ public class MicrosoftLearnMcpClient : IMicrosoftLearnMcpClient
                         sb.AppendLine(text.GetString());
                 }
                 var combined = sb.ToString().Trim();
-                if (combined.Length > 8000) combined = combined[..8000] + "\n…(truncated)";
+                if (combined.Length > 16000) combined = combined[..16000] + "\n…(truncated)";
                 return string.IsNullOrWhiteSpace(combined) ? "No results." : combined;
             }
 
