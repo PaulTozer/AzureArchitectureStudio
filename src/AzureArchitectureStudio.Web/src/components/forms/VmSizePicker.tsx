@@ -57,10 +57,15 @@ export default function VmSizePicker({
   }, [selectedScope, azureSubscription]);
 
   // Resolve the region: prefer a per-resource override, otherwise walk
-  // up to the enclosing resource group's location.
-  const region: string | undefined = useMemo(() => {
+  // up to the enclosing resource group's location, otherwise fall back
+  // to a sensible default so the live API still works without forcing
+  // the user to pick a region first.
+  const DEFAULT_REGION = 'eastus';
+  const { region, regionSource } = useMemo(() => {
     const own = properties.location;
-    if (typeof own === 'string' && own.trim()) return own.trim();
+    if (typeof own === 'string' && own.trim()) {
+      return { region: own.trim(), regionSource: 'override' as const };
+    }
     const byId = new Map(nodes.map((n) => [n.id, n] as const));
     let cursor = byId.get(nodeId);
     while (cursor && cursor.parentId) {
@@ -69,12 +74,14 @@ export default function VmSizePicker({
       const pData = p.data as AzureNodeData | undefined;
       if (pData?.typeKey === 'resource-group') {
         const loc = pData?.properties?.location;
-        if (typeof loc === 'string' && loc.trim()) return loc.trim();
+        if (typeof loc === 'string' && loc.trim()) {
+          return { region: loc.trim(), regionSource: 'rg' as const };
+        }
         break;
       }
       cursor = p;
     }
-    return undefined;
+    return { region: DEFAULT_REGION, regionSource: 'default' as const };
   }, [properties.location, nodes, nodeId]);
 
   const [liveFamilies, setLiveFamilies] = useState<VmFamily[] | null>(null);
@@ -85,7 +92,7 @@ export default function VmSizePicker({
   // Fetch the live list whenever sub or region change. Falls back
   // silently to the catalog on any failure.
   useEffect(() => {
-    if (!isAuthenticated || !subscriptionId || !region) {
+    if (!isAuthenticated || !subscriptionId) {
       setLiveFamilies(null);
       setError(null);
       setLoading(false);
@@ -176,12 +183,12 @@ export default function VmSizePicker({
   const sourceHint = loading
     ? 'Fetching live VM sizes…'
     : liveFamilies
-      ? `Live: ${families.length} families in ${region}.`
+      ? regionSource === 'default'
+        ? `Live: ${families.length} families (default region ${region}; set the resource group region to filter).`
+        : `Live: ${families.length} families in ${region}.`
       : !subscriptionId
         ? 'Sign in and pick a subscription to load the live SKU list.'
-        : !region
-          ? 'Set the resource group region (or override location on this VM) to load live SKUs.'
-          : error ?? 'Using offline catalog.';
+        : error ?? 'Using offline catalog.';
 
   return (
     <>

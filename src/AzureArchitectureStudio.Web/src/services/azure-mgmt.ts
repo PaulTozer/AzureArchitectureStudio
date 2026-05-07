@@ -294,6 +294,108 @@ export async function listVmSizes(
   return data?.value ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// VM image catalog (publishers / offers / SKUs, live per region)
+// ---------------------------------------------------------------------------
+
+/** Bare entry returned by the publisher / offer / sku endpoints. */
+export interface AzureVmImageEntry {
+  id?: string;
+  name: string;
+  location?: string;
+}
+
+const IMAGE_API_VERSION = '2024-07-01';
+
+/** List all image publishers in a region. */
+export async function listVmImagePublishers(
+  subscriptionId: string,
+  location: string,
+): Promise<AzureVmImageEntry[] | null> {
+  const data = await armFetch<AzureVmImageEntry[]>(
+    `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/locations/${location}/publishers`,
+    IMAGE_API_VERSION,
+  );
+  // This endpoint returns a bare array, not the usual { value: [...] } envelope.
+  return Array.isArray(data) ? data : null;
+}
+
+/** List image offers under a publisher. */
+export async function listVmImageOffers(
+  subscriptionId: string,
+  location: string,
+  publisher: string,
+): Promise<AzureVmImageEntry[] | null> {
+  const data = await armFetch<AzureVmImageEntry[]>(
+    `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/locations/${location}/publishers/${encodeURIComponent(publisher)}/artifacttypes/vmimage/offers`,
+    IMAGE_API_VERSION,
+  );
+  return Array.isArray(data) ? data : null;
+}
+
+/** List image SKUs under an offer. */
+export async function listVmImageSkus(
+  subscriptionId: string,
+  location: string,
+  publisher: string,
+  offer: string,
+): Promise<AzureVmImageEntry[] | null> {
+  const data = await armFetch<AzureVmImageEntry[]>(
+    `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/locations/${location}/publishers/${encodeURIComponent(publisher)}/artifacttypes/vmimage/offers/${encodeURIComponent(offer)}/skus`,
+    IMAGE_API_VERSION,
+  );
+  return Array.isArray(data) ? data : null;
+}
+// ---------------------------------------------------------------------------
+// Availability Zones (per region, per subscription)
+// ---------------------------------------------------------------------------
+
+interface SubscriptionLocation {
+  id: string;
+  name: string; // canonical name e.g. "ukwest"
+  displayName: string;
+  availabilityZoneMappings?: { logicalZone: string; physicalZone: string }[];
+}
+
+// Per-subscription cache of the locations response so we don't refetch on
+// every property edit. Keyed by subscriptionId, value is a map from
+// region name -> zone array (empty array = no zones supported).
+const zonesCache = new Map<string, Map<string, string[]>>();
+
+async function loadSubscriptionZoneMap(subscriptionId: string): Promise<Map<string, string[]> | null> {
+  const cached = zonesCache.get(subscriptionId);
+  if (cached) return cached;
+  const data = await armFetch<{ value: SubscriptionLocation[] }>(
+    `/subscriptions/${subscriptionId}/locations`,
+    '2022-12-01',
+  );
+  if (!data?.value) return null;
+  const map = new Map<string, string[]>();
+  for (const loc of data.value) {
+    const zones = (loc.availabilityZoneMappings ?? [])
+      .map((z) => z.logicalZone)
+      .filter(Boolean);
+    map.set(loc.name.toLowerCase(), zones);
+  }
+  zonesCache.set(subscriptionId, map);
+  return map;
+}
+
+/**
+ * Return the list of logical availability zones supported in the given
+ * region (e.g. ["1","2","3"]). Returns [] when the region exists but
+ * has no AZs, or null when we can't determine support yet (offline,
+ * no auth, region not in subscription's location list).
+ */
+export async function getRegionAvailabilityZones(
+  subscriptionId: string,
+  region: string,
+): Promise<string[] | null> {
+  const map = await loadSubscriptionZoneMap(subscriptionId);
+  if (!map) return null;
+  const zones = map.get(region.toLowerCase());
+  return zones ?? null;
+}
 /**
  * Fetch full per-resource details for each id, replacing the `properties`
  * field on the corresponding entry in the input list. Best-effort:

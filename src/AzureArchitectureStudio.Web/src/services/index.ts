@@ -12,6 +12,10 @@ export {
   reauthenticate,
   AUTH_REQUIRED_EVENT,
   listVmSizes,
+  listVmImagePublishers,
+  listVmImageOffers,
+  listVmImageSkus,
+  getRegionAvailabilityZones,
   type AzureSubscription,
   type AzureResourceGroup,
   type AzureManagementGroup,
@@ -19,6 +23,7 @@ export {
   type AzureMgChildSubscription,
   type ScopeRef,
   type AzureVmSize,
+  type AzureVmImageEntry,
 } from './azure-mgmt';
 export {
   loadOpenAISettings,

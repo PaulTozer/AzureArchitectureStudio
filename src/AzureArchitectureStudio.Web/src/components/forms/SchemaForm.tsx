@@ -17,6 +17,8 @@ import { regionOptions } from '../../models/azure-regions';
 import { vmFamilyOptions, vmSizeOptions } from '../../models/vm-sizes';
 import AzurePickerField from './AzurePickerField';
 import VmSizePicker from './VmSizePicker';
+import VmImagePicker from './VmImagePicker';
+import AvailabilityZonePicker from './AvailabilityZonePicker';
 import { dbg } from '../../utils/debug';
 
 /** Resolve a field's effective select options, honouring `optionsSource`. */
@@ -243,6 +245,39 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
           properties={properties}
           onChange={onMultiChange}
           nodeId={nodeId}
+        />
+      );
+
+    case 'vm-image-picker':
+      // Cascading Publisher / Offer / SKU picker backed by the live
+      // ARM image catalog. Field key is `imagePublisher` (the one the
+      // user selects first); writes imageOffer + imageSku atomically.
+      if (!nodeId || !onMultiChange) return null;
+      return (
+        <VmImagePicker
+          value={(value as string) ?? ''}
+          properties={properties}
+          onChange={onMultiChange}
+          nodeId={nodeId}
+        />
+      );
+
+    case 'availability-zone-picker':
+      // Region-aware AZ picker. Greys out when the resource's region
+      // doesn't support availability zones. Pass `multi: true` in the
+      // field's `azureFieldMap` (or via field.multi if added) to render
+      // a multi-select that writes a CSV value.
+      if (!nodeId) return null;
+      return (
+        <AvailabilityZonePicker
+          fieldKey={field.key}
+          label={field.label}
+          required={field.required}
+          value={(value as string) ?? ''}
+          properties={properties}
+          nodeId={nodeId}
+          onChange={onChange}
+          multi={field.key === 'availabilityZones'}
         />
       );
 

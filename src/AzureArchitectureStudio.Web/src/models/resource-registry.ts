@@ -11,7 +11,7 @@ import {
 export interface PropertyField {
   key: string;
   label: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker' | 'vm-size-picker';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'radio' | 'array' | 'password' | 'object' | 'object-array' | 'azure-picker' | 'vm-size-picker' | 'vm-image-picker' | 'availability-zone-picker';
   defaultValue?: unknown;
   options?: { label: string; value: string }[];
   /**

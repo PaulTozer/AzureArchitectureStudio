@@ -312,44 +312,8 @@
       {
         "key": "imagePublisher",
         "label": "Image Publisher",
-        "type": "select",
-        "defaultValue": "Canonical",
-        "options": [
-          {
-            "label": "Canonical (Ubuntu)",
-            "value": "Canonical"
-          },
-          {
-            "label": "RedHat",
-            "value": "RedHat"
-          },
-          {
-            "label": "MicrosoftWindowsServer",
-            "value": "MicrosoftWindowsServer"
-          },
-          {
-            "label": "Debian",
-            "value": "Debian"
-          },
-          {
-            "label": "SUSE",
-            "value": "SUSE"
-          }
-        ]
-      },
-      {
-        "key": "imageOffer",
-        "label": "Image Offer",
-        "type": "string",
-        "defaultValue": "0001-com-ubuntu-server-jammy",
-        "placeholder": "e.g. 0001-com-ubuntu-server-jammy"
-      },
-      {
-        "key": "imageSku",
-        "label": "Image SKU",
-        "type": "string",
-        "defaultValue": "22_04-lts-gen2",
-        "placeholder": "e.g. 22_04-lts-gen2"
+        "type": "vm-image-picker",
+        "defaultValue": "Canonical"
       },
       {
         "key": "adminUsername",
@@ -419,26 +383,8 @@
       {
         "key": "availabilityZone",
         "label": "Availability Zone",
-        "type": "select",
-        "defaultValue": "",
-        "options": [
-          {
-            "label": "No zone",
-            "value": ""
-          },
-          {
-            "label": "Zone 1",
-            "value": "1"
-          },
-          {
-            "label": "Zone 2",
-            "value": "2"
-          },
-          {
-            "label": "Zone 3",
-            "value": "3"
-          }
-        ]
+        "type": "availability-zone-picker",
+        "defaultValue": ""
       },
       {
         "key": "enableBootDiagnostics",
