@@ -19,6 +19,7 @@ import AzurePickerField from './AzurePickerField';
 import VmSizePicker from './VmSizePicker';
 import VmImagePicker from './VmImagePicker';
 import AvailabilityZonePicker from './AvailabilityZonePicker';
+import DiskSkuPicker from './DiskSkuPicker';
 import { dbg } from '../../utils/debug';
 
 /** Resolve a field's effective select options, honouring `optionsSource`. */
@@ -278,6 +279,22 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
           nodeId={nodeId}
           onChange={onChange}
           multi={field.key === 'availabilityZones'}
+        />
+      );
+
+    case 'disk-sku-picker':
+      // Managed-disk SKU picker that hides ZRS variants in regions
+      // without availability zones (ZRS requires AZs).
+      if (!nodeId) return null;
+      return (
+        <DiskSkuPicker
+          fieldKey={field.key}
+          label={field.label}
+          required={field.required}
+          value={(value as string) ?? ''}
+          properties={properties}
+          nodeId={nodeId}
+          onChange={onChange}
         />
       );
 

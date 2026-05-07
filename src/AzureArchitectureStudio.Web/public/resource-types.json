@@ -438,18 +438,9 @@
       {
         "key": "skuName",
         "label": "Performance Tier (SKU)",
-        "type": "select",
+        "type": "disk-sku-picker",
         "defaultValue": "Premium_LRS",
-        "required": true,
-        "options": [
-          { "label": "Standard HDD (Standard_LRS)", "value": "Standard_LRS" },
-          { "label": "Standard SSD (StandardSSD_LRS)", "value": "StandardSSD_LRS" },
-          { "label": "Standard SSD ZRS (StandardSSD_ZRS)", "value": "StandardSSD_ZRS" },
-          { "label": "Premium SSD (Premium_LRS)", "value": "Premium_LRS" },
-          { "label": "Premium SSD ZRS (Premium_ZRS)", "value": "Premium_ZRS" },
-          { "label": "Premium SSD v2 (PremiumV2_LRS)", "value": "PremiumV2_LRS" },
-          { "label": "Ultra SSD (UltraSSD_LRS)", "value": "UltraSSD_LRS" }
-        ]
+        "required": true
       },
       {
         "key": "diskSizeGb",
@@ -520,7 +511,11 @@
         "key": "availabilityZone",
         "label": "Availability Zone",
         "type": "availability-zone-picker",
-        "defaultValue": ""
+        "defaultValue": "",
+        "visibleWhen": {
+          "field": "skuName",
+          "value": ["Standard_LRS", "StandardSSD_LRS", "Premium_LRS", "PremiumV2_LRS", "UltraSSD_LRS"]
+        }
       }
     ],
     "armMapping": {
