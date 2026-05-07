@@ -230,16 +230,35 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
             if (parentIdResolved) {
               childIndexByParent.set(parentIdResolved, siblingIndex + 1);
             }
-            const startX = isSyntheticSubnetParent ? 12 : (a.x ?? 0);
-            const startY = isSyntheticSubnetParent ? 32 : (a.y ?? 0);
-            const tileX = isSyntheticSubnetParent
-              ? startX + siblingIndex * (LEAF_W + 12)
-              : startX;
+            // Tile children inside their parent in a wrapping grid so the
+            // initial placement is non-overlapping even before
+            // autoLayoutDiagram has a chance to run. autoLayout will then
+            // refine these positions based on actual measured sizes.
+            // - Synthetic-subnet parents tile at a tighter cadence (LEAF_W).
+            // - Real parents tile by an estimated cell size (group default
+            //   if known, else LEAF_W).
+            let initX: number;
+            let initY: number;
+            if (isSyntheticSubnetParent) {
+              initX = 12 + siblingIndex * (LEAF_W + 12);
+              initY = 32;
+            } else if (parentIdResolved) {
+              const cellW = grouped ? Math.max(LEAF_W, (groupDims?.width ?? LEAF_W) / 2) : LEAF_W;
+              const cellH = grouped ? Math.max(LEAF_H, (groupDims?.height ?? LEAF_H) / 2) : LEAF_H;
+              const cols = 4; // pre-layout fallback grid; autoLayout will re-pack
+              const r = Math.floor(siblingIndex / cols);
+              const c = siblingIndex % cols;
+              initX = (a.x ?? (24 + c * (cellW + 24)));
+              initY = (a.y ?? (56 + r * (cellH + 24)));
+            } else {
+              initX = a.x ?? 0;
+              initY = a.y ?? 0;
+            }
 
             const node: AzureNode = {
               id: a.id,
               type: grouped ? 'azureGroup' : 'azureNode',
-              position: { x: tileX, y: startY },
+              position: { x: initX, y: initY },
               data: {
                 typeKey: a.typeKey,
                 imagePath: iconPath,
@@ -708,7 +727,12 @@ function autoLayoutDiagram(
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
   const childrenOf = new Map<string | undefined, AzureNode[]>();
   for (const n of nodes) {
-    const pid = (n as { parentId?: string }).parentId;
+    let pid = (n as { parentId?: string }).parentId;
+    // Treat nodes whose parent doesn't exist in the snapshot as
+    // top-level — otherwise they'd be unreachable from the recursive
+    // measure() walk and stay stuck at (0,0). This guards against the
+    // AI sending a parentId that hasn't been (or wasn't) created.
+    if (pid && !byId.has(pid)) pid = undefined;
     const arr = childrenOf.get(pid) ?? [];
     arr.push(n);
     childrenOf.set(pid, arr);

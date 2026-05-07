@@ -190,21 +190,24 @@ public class AzureOpenAIChatService : IChatService
             // Normal text completion — done
             var text = completion.Content.Count > 0 ? completion.Content[0].Text : string.Empty;
 
-            // Guard against the model promising to "continue later" while
-            // leaving the build incomplete. If the final text contains a
-            // continuation phrase, force one more tool-calling round with
-            // an explicit system reminder. Limit to a small number of
-            // re-prompts so we never loop indefinitely on a stubborn model.
-            if (LooksLikeContinuationPromise(text) && continueNudgesUsed < 3)
+            // Guard against the model promising to "continue later" or
+            // asking the user permission to do the obvious next step
+            // while leaving the build incomplete. If the final text
+            // contains a continuation/ask phrase, force one more
+            // tool-calling round with an explicit system reminder.
+            // Documentation answers (which intentionally end with a
+            // "Next steps" bullet list of suggestions) are exempted.
+            var isDocsAnswer = LooksLikeDocsAnswer(text);
+            if (!isDocsAnswer && LooksLikeContinuationPromise(text) && continueNudgesUsed < 3)
             {
                 continueNudgesUsed++;
                 _logger.LogInformation(
-                    "Detected continuation promise in assistant reply; forcing another tool round (nudge {Count}/3).",
+                    "Detected continuation/ask promise in assistant reply; forcing another tool round (nudge {Count}/3).",
                     continueNudgesUsed);
                 messages.Add(new AssistantChatMessage(text));
                 messages.Add(new UserChatMessage(
-                    "(System note: Do NOT promise to continue in another message — there is no next turn. " +
-                    "Finish the build right now by calling add_node / connect_nodes for every remaining layer of the design (subscriptions under management groups, resource groups under subscriptions, actual resources inside resource groups, subnets inside VNets, etc.) before emitting your final text reply.")
+                    "(System note: Do NOT ask the user whether to continue or whether to add the next obvious resource — just DO it now. " +
+                    "Pick the most reasonable interpretation, call the necessary add_node / connect_nodes tools to finish the design (subscriptions under management groups, resource groups under subscriptions, actual resources inside resource groups, subnets inside VNets, supporting infrastructure, monitoring, etc.), and only then emit a final text reply describing what was built (past tense, no questions back to the user).")
                 );
                 continue;
             }
@@ -248,6 +251,7 @@ public class AzureOpenAIChatService : IChatService
         var t = text.ToLowerInvariant();
         string[] phrases =
         [
+            // Continuation promises
             "continuing build",
             "i'll continue",
             "i will continue",
@@ -271,12 +275,50 @@ public class AzureOpenAIChatService : IChatService
             "in a follow up",
             "i'll keep going",
             "i will keep going",
+            // Asking-the-user-instead-of-acting patterns. The model
+            // should DO the obvious next step, not ask for permission.
+            // (Documentation / informational replies legitimately end
+            // with a "Next steps" bullet list — those use a different
+            // structure and are excluded by the LooksLikeDocsAnswer
+            // check at the call site.)
+            "would you like me to",
+            "would you like to",
+            "do you want me to",
+            "do you want to",
+            "shall i ",
+            "should i add",
+            "should i build",
+            "should i create",
+            "let me know if you'd like",
+            "let me know if you want",
+            "let me know which",
+            "want me to add",
+            "want me to build",
+            "want me to create",
         ];
         foreach (var p in phrases)
         {
             if (t.Contains(p)) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Heuristic: does this assistant reply look like a documentation /
+    /// informational answer (rather than a build action summary)? Docs
+    /// answers are allowed to end with a "Next steps" bullet list of
+    /// suggestions — those should NOT be re-prompted as continuation
+    /// promises.
+    /// </summary>
+    private static bool LooksLikeDocsAnswer(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var t = text.ToLowerInvariant();
+        // The system prompt requires docs answers to end with a "Next
+        // steps" header. That header is the cleanest signal.
+        return t.Contains("next steps")
+            || t.Contains("\n## next ")
+            || t.Contains("**next steps**");
     }
 
     // The catalog uses both singular and plural forms (e.g. 'virtual-networks',
@@ -528,7 +570,9 @@ You help the user create, modify, and explain Azure architecture diagrams on a v
 - When the user asks for an architecture, design it and build it in the same turn using tool calls. Do not describe what you would do in prose first.
 - Apply Microsoft's Well-Architected Framework (Reliability, Security, Cost, Operational Excellence, Performance Efficiency) and Azure Architecture Center reference architectures when choosing components.
 - For anything you are not 100% certain about (specific SKUs, networking patterns, current best practice), call microsoft_docs_search BEFORE building, then proceed.
-- Only ask the user a question when their request is genuinely ambiguous in intent (e.g. "what region?", "internal or internet-facing?"). Never ask which service-key to use.
+- **Default to acting, not asking.** Never end a turn with a question like "would you like me to…", "shall I add…", "do you want me to continue", "should I also build…", or "let me know if you'd like…". If a question like that is forming, instead just DO it — pick the most reasonable interpretation and build it. The user can always undo or refine afterwards.
+- The ONLY time you may ask the user a clarifying question is when their request is so ambiguous that picking a default would be misleading (e.g. they said "build something" with zero context). Otherwise, infer the most likely intent from the conversation and the current canvas, and build.
+- Specifically: do NOT ask before adding obvious follow-on resources, supporting infrastructure, monitoring, security hardening, or the next logical layer of a multi-tier design. Just add them and explain in the final reply what you added and why.
 
 # Completeness rules — always include implicit dependencies
 Before you finish, every resource on the canvas must have everything it needs to actually deploy. Whenever you add or modify resources, audit the diagram and add any missing supporting resources WITHOUT being asked:
@@ -605,7 +649,15 @@ You have ONE turn to finish the build. The user cannot "let you continue" — on
 - Your final text reply should describe what was built (past tense), NOT what you're about to build. If a layer is missing, the answer is more tool calls, not a promise to do them later.
 
 # Azure landing zone (CAF) hierarchy
-When the user asks for an "Azure landing zone", "enterprise-scale landing zone", "CAF landing zone", or similar, follow Microsoft Cloud Adoption Framework Enterprise-Scale. The full structure to build (use exactly these typeKeys: `management-groups`, `subscriptions`, `resource-group`):
+When the user asks for an "Azure landing zone", "enterprise-scale landing zone", "CAF landing zone", or similar, follow Microsoft Cloud Adoption Framework Enterprise-Scale.
+
+**IMPORTANT — render management groups as a TREE, not as nested boxes:**
+- `management-groups` is a LEAF node type (small icon + label), not a container. Do NOT pass `parentId` between management groups, and do NOT try to nest one MG inside another — they will visually overlap.
+- Instead, place every management group as a top-level node (no parentId) and use `connect_nodes(parentMgId, childMgId)` to draw an arrow from each parent MG down to each child MG. This produces the standard CAF MG hierarchy diagram (Tenant Root → Platform / Landing Zones / Sandbox / Decommissioned → child MGs → subscriptions).
+- Subscriptions are containers. Place each `subscriptions` node as a top-level node (no parentId) and use `connect_nodes(mgId, subscriptionId)` to attach it to its owning management group in the tree. Resources / resource-groups for that subscription go INSIDE the subscription container as normal.
+- Result: the top half of the canvas shows the MG tree (small MG icons + arrows), and the bottom half shows the subscription containers with their resource groups and resources inside.
+
+The full structure to build (use exactly these typeKeys: `management-groups`, `subscriptions`, `resource-group`):
 
 ```
 Tenant Root (management-groups, name = "Tenant Root Group" or company name)
@@ -624,13 +676,13 @@ Tenant Root (management-groups, name = "Tenant Root Group" or company name)
 ```
 
 Order of build (and don't stop until ALL of it exists):
-1. Tenant root management-group → all child management-groups (Platform, Landing Zones, Corp, Online, Sandbox, Decommissioned).
-2. The platform subscriptions (Identity, Management, Connectivity) parented to their respective management-groups.
-3. One example landing-zone subscription under Corp and one under Online.
-4. The platform resource groups inside each platform subscription (rg-identity, rg-management, rg-connectivity-hub).
-5. The actual platform resources inside those RGs — at minimum: in rg-management add a `log-analytics-workspace`; in rg-connectivity-hub add a `virtual-network` named `vnet-hub`, then subnets (`AzureFirewallSubnet`, `AzureBastionSubnet`, `GatewaySubnet`), then an `azure-firewall` in the firewall subnet and a `bastion` in the bastion subnet; in rg-identity add a `key-vault`.
+1. All management-groups as TOP-LEVEL leaf nodes (no parentId), in tree order: Tenant Root, then Platform, Landing Zones, Sandbox, Decommissioned, then Corp, Online.
+2. `connect_nodes` to draw the MG hierarchy: Tenant Root → each child MG, Landing Zones → Corp, Landing Zones → Online.
+3. Subscriptions as TOP-LEVEL container nodes (no parentId): Identity, Management, Connectivity, plus one Corp LZ subscription and one Online LZ subscription. Use `connect_nodes(<owning MG id>, <subscription id>)` to attach each subscription to its MG in the tree.
+4. Resource groups INSIDE each subscription (parentId = subscription id): rg-identity, rg-management, rg-connectivity-hub, rg-workload for the LZ subs.
+5. The actual platform resources INSIDE those RGs — at minimum: in rg-management add a `log-analytics-workspace`; in rg-connectivity-hub add a `virtual-network` named `vnet-hub`, then subnets (`AzureFirewallSubnet`, `AzureBastionSubnet`, `GatewaySubnet`), then an `azure-firewall` in the firewall subnet and a `bastion` in the bastion subnet; in rg-identity add a `key-vault`.
 
-The diagram is incomplete unless the platform resources actually exist — empty management-group / subscription / RG containers alone are NOT a landing zone.
+The diagram is incomplete unless the platform resources actually exist — empty subscription / RG containers alone are NOT a landing zone.
 
 # Reply style
 - For diagram-build actions, keep replies short (1–4 sentences). After building, summarise what you placed and any best-practice rationale (e.g. "Added App Service Plan + Web App for the tier, Azure SQL for the data tier, and a Storage Account for blobs — following the Azure Architecture Center 'Basic web application' reference.").
