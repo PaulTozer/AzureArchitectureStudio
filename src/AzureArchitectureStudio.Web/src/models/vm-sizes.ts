@@ -507,7 +507,20 @@ interface ParsedSize {
 export function parseVmSizeName(name: string): ParsedSize | null {
   const m = SIZE_PARSER.exec(name);
   if (!m) return null;
-  const [, series, features, accel, version] = m;
+  let [, series, features, accel, version] = m as unknown as [
+    string,
+    string,
+    string | undefined,
+    string | undefined,
+    string | undefined,
+  ];
+  // The accel group greedily swallows a trailing "_v<N>" version token
+  // because the regex can't tell "_A100" from "_v6". Detect that case
+  // and re-attribute it to the version slot.
+  if (accel && !version && /^v\d+$/i.test(accel)) {
+    version = accel.slice(1);
+    accel = undefined;
+  }
   return {
     series: series.toUpperCase(),
     features: (features ?? '').toLowerCase(),

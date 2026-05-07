@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Field,
-  Dropdown,
+  Combobox,
   Option,
   Spinner,
   Link,
@@ -142,6 +142,37 @@ export default function VmSizePicker({
     return s ? formatSizeLabelPublic(s) : value;
   }, [activeFamily, value]);
 
+  // Free-text filter state for each combobox. Empty string = show all.
+  const [familyQuery, setFamilyQuery] = useState('');
+  const [sizeQuery, setSizeQuery] = useState('');
+
+  const familyMatches = useMemo(() => {
+    const q = familyQuery.trim().toLowerCase();
+    if (!q) return families;
+    return families.filter((f) => {
+      const haystack = `${f.shortName} ${f.description} ${f.key}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [families, familyQuery]);
+
+  // Across-all-families size search: when the user types a fragment of a
+  // SKU name (e.g. "D4s_v5") we surface matches from every family so they
+  // can jump straight to it without picking the family first.
+  const sizeMatches = useMemo(() => {
+    const q = sizeQuery.trim().toLowerCase();
+    if (!q) {
+      return (activeFamily?.sizes ?? []).map((s) => ({ size: s, family: activeFamily! }));
+    }
+    const out: { size: typeof families[number]['sizes'][number]; family: VmFamily }[] = [];
+    for (const f of families) {
+      for (const s of f.sizes) {
+        const haystack = `${s.name} ${formatSizeLabelPublic(s)} ${f.shortName}`.toLowerCase();
+        if (haystack.includes(q)) out.push({ size: s, family: f });
+      }
+    }
+    return out.slice(0, 200);
+  }, [families, activeFamily, sizeQuery]);
+
   const sourceHint = loading
     ? 'Fetching live VM sizes…'
     : liveFamilies
@@ -160,40 +191,84 @@ export default function VmSizePicker({
         hint={sourceHint}
         validationState={error && !loading ? 'warning' : undefined}
       >
-        <Dropdown
-          value={familyLabel}
+        <Combobox
+          freeform
+          value={familyQuery || familyLabel}
+          selectedOptions={activeFamilyKey ? [activeFamilyKey] : []}
+          placeholder="Search families…"
+          onFocus={(e) => (e.target as HTMLInputElement).select?.()}
+          onInput={(e) => setFamilyQuery((e.target as HTMLInputElement).value)}
           onOptionSelect={(_, d) => {
             const fam = familyByKey.get(d.optionValue ?? '');
             if (!fam) return;
-            // Reset size to the family's first SKU (or its declared default).
             const newSize =
               fam.sizes.find((s) => s.name === fam.defaultSize)?.name ??
               fam.sizes[0]?.name ??
               '';
             onChange({ vmFamily: fam.key, vmSize: newSize });
+            setFamilyQuery('');
+            setSizeQuery('');
           }}
           size="small"
         >
-          {families.map((f) => (
-            <Option key={f.key} value={f.key}>
+          {familyMatches.map((f) => (
+            <Option key={f.key} value={f.key} text={`${f.shortName} — ${f.description}`}>
               {`${f.shortName} — ${f.description}`}
             </Option>
           ))}
-        </Dropdown>
+          {familyMatches.length === 0 && (
+            <Option key="__no_family_matches" value="" disabled text="No matches">
+              No matches
+            </Option>
+          )}
+        </Combobox>
       </Field>
 
-      <Field label="VM Size" required>
-        <Dropdown
-          value={sizeLabel}
-          onOptionSelect={(_, d) => onChange({ vmSize: d.optionValue ?? '' })}
+      <Field
+        label="VM Size"
+        required
+        hint="Type any part of a SKU name (e.g. D4s_v5) to search across all families."
+      >
+        <Combobox
+          freeform
+          value={sizeQuery || sizeLabel}
+          selectedOptions={value ? [value] : []}
+          placeholder="Search sizes…"
+          onFocus={(e) => (e.target as HTMLInputElement).select?.()}
+          onInput={(e) => setSizeQuery((e.target as HTMLInputElement).value)}
+          onOptionSelect={(_, d) => {
+            const picked = d.optionValue ?? '';
+            if (!picked) return;
+            // Find which family the picked SKU belongs to so we keep
+            // vmFamily in sync (important when search jumped families).
+            const owner =
+              families.find((f) => f.sizes.some((s) => s.name === picked)) ??
+              activeFamily;
+            onChange({
+              vmFamily: owner?.key ?? activeFamilyKey,
+              vmSize: picked,
+            });
+            setSizeQuery('');
+          }}
           size="small"
         >
-          {(activeFamily?.sizes ?? []).map((s) => (
-            <Option key={s.name} value={s.name}>
-              {formatSizeLabelPublic(s)}
+          {sizeMatches.map(({ size, family }) => {
+            const label = formatSizeLabelPublic(size);
+            const display = sizeQuery.trim()
+              ? `${label}  ·  ${family.shortName}`
+              : label;
+            return (
+              <Option key={`${family.key}:${size.name}`} value={size.name} text={display}>
+                {display}
+              </Option>
+            );
+          })}
+          {sizeMatches.length === 0 && (
+            <Option key="__no_size_matches" value="" disabled text="No matches">
+              No matches
             </Option>
-          ))}
-        </Dropdown>
+          )}
+        </Combobox>
       </Field>
 
       {loading && (

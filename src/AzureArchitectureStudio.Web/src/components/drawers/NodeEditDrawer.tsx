@@ -23,6 +23,7 @@ import type { ResourceTypeDefinition } from '../../models';
 import { evaluateDependencies } from '../../hooks/useDependencies';
 import { parseSubnetNodeId } from '../../hooks/useSubnetSync';
 import { regionOptions } from '../../models/azure-regions';
+import { resolveKey } from '../../models/resource-registry';
 import SchemaForm from '../forms/SchemaForm';
 import { dbg } from '../../utils/debug';
 
@@ -162,7 +163,7 @@ export default function NodeEditDrawer({
             management groups have none). Subnet children inherit from
             their VNet so we hide it for them too. */}
         {(() => {
-          const tk = data.typeKey;
+          const tk = resolveKey(data.typeKey);
           const noLocationTypes = new Set([
             'resource-group',
             'subscriptions',
