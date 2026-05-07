@@ -146,6 +146,7 @@ const KEY_ALIASES: Record<string, string> = {
   'static-web-apps': 'static-web-app',
   'azure-database-for-mysql-flexible-servers': 'mysql',
   'azure-database-for-postgresql-flexible-servers': 'postgresql',
+  disks: 'managed-disk',
 };
 
 /** Resolves any incoming key to its canonical registry key. */

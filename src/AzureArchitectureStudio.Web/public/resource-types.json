@@ -430,6 +430,113 @@
     ]
   },
   {
+    "key": "managed-disk",
+    "displayName": "Managed Disk",
+    "armType": "Microsoft.Compute/disks",
+    "apiVersion": "2024-03-01",
+    "propertySchema": [
+      {
+        "key": "skuName",
+        "label": "Performance Tier (SKU)",
+        "type": "select",
+        "defaultValue": "Premium_LRS",
+        "required": true,
+        "options": [
+          { "label": "Standard HDD (Standard_LRS)", "value": "Standard_LRS" },
+          { "label": "Standard SSD (StandardSSD_LRS)", "value": "StandardSSD_LRS" },
+          { "label": "Standard SSD ZRS (StandardSSD_ZRS)", "value": "StandardSSD_ZRS" },
+          { "label": "Premium SSD (Premium_LRS)", "value": "Premium_LRS" },
+          { "label": "Premium SSD ZRS (Premium_ZRS)", "value": "Premium_ZRS" },
+          { "label": "Premium SSD v2 (PremiumV2_LRS)", "value": "PremiumV2_LRS" },
+          { "label": "Ultra SSD (UltraSSD_LRS)", "value": "UltraSSD_LRS" }
+        ]
+      },
+      {
+        "key": "diskSizeGb",
+        "label": "Size (GiB)",
+        "type": "number",
+        "defaultValue": 128,
+        "required": true,
+        "placeholder": "e.g. 128, 256, 512, 1024"
+      },
+      {
+        "key": "createOption",
+        "label": "Create Option",
+        "type": "select",
+        "defaultValue": "Empty",
+        "options": [
+          { "label": "Empty (new blank disk)", "value": "Empty" },
+          { "label": "From snapshot", "value": "Copy" },
+          { "label": "From image", "value": "FromImage" },
+          { "label": "From storage blob", "value": "Import" },
+          { "label": "Restore from backup", "value": "Restore" }
+        ]
+      },
+      {
+        "key": "diskIopsReadWrite",
+        "label": "Provisioned IOPS",
+        "type": "number",
+        "defaultValue": 3000,
+        "placeholder": "Premium v2 / Ultra only",
+        "visibleWhen": { "field": "skuName", "value": ["PremiumV2_LRS", "UltraSSD_LRS"] }
+      },
+      {
+        "key": "diskMBpsReadWrite",
+        "label": "Provisioned Throughput (MB/s)",
+        "type": "number",
+        "defaultValue": 125,
+        "placeholder": "Premium v2 / Ultra only",
+        "visibleWhen": { "field": "skuName", "value": ["PremiumV2_LRS", "UltraSSD_LRS"] }
+      },
+      {
+        "key": "burstingEnabled",
+        "label": "On-demand Bursting",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": { "field": "skuName", "value": ["Premium_LRS", "Premium_ZRS"] }
+      },
+      {
+        "key": "networkAccessPolicy",
+        "label": "Network Access",
+        "type": "select",
+        "defaultValue": "AllowAll",
+        "options": [
+          { "label": "Allow public access from all networks", "value": "AllowAll" },
+          { "label": "Allow only via private endpoints", "value": "AllowPrivate" },
+          { "label": "Deny all", "value": "DenyAll" }
+        ]
+      },
+      {
+        "key": "publicNetworkAccess",
+        "label": "Public Network Access",
+        "type": "radio",
+        "defaultValue": "Enabled",
+        "options": [
+          { "label": "Enabled", "value": "Enabled" },
+          { "label": "Disabled", "value": "Disabled" }
+        ]
+      },
+      {
+        "key": "availabilityZone",
+        "label": "Availability Zone",
+        "type": "availability-zone-picker",
+        "defaultValue": ""
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "skuName": "sku.name",
+        "diskSizeGb": "properties.diskSizeGB",
+        "createOption": "properties.creationData.createOption",
+        "diskIopsReadWrite": "properties.diskIOPSReadWrite",
+        "diskMBpsReadWrite": "properties.diskMBpsReadWrite",
+        "burstingEnabled": "properties.burstingEnabled",
+        "networkAccessPolicy": "properties.networkAccessPolicy",
+        "publicNetworkAccess": "properties.publicNetworkAccess"
+      }
+    }
+  },
+  {
     "key": "storage-account",
     "displayName": "Storage Account",
     "armType": "Microsoft.Storage/storageAccounts",
