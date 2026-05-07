@@ -181,7 +181,7 @@ export default function NodeEditDrawer({
             const p = byId.get(cursor.parentId);
             if (!p) break;
             const pData = p.data as AzureNodeData | undefined;
-            if (pData?.typeKey === 'resource-group') {
+            if (pData && resolveKey(pData.typeKey) === 'resource-group') {
               const loc = pData?.properties?.location as string | undefined;
               if (loc) inherited = loc;
               break;

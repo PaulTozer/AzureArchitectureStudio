@@ -16,6 +16,7 @@ import {
   getVmFamily,
   type VmFamily,
 } from '../../models/vm-sizes';
+import { resolveKey } from '../../models/resource-registry';
 import type { AzureNodeData } from '../../models';
 
 interface VmSizePickerProps {
@@ -72,7 +73,7 @@ export default function VmSizePicker({
       const p = byId.get(cursor.parentId);
       if (!p) break;
       const pData = p.data as AzureNodeData | undefined;
-      if (pData?.typeKey === 'resource-group') {
+      if (pData && resolveKey(pData.typeKey) === 'resource-group') {
         const loc = pData?.properties?.location;
         if (typeof loc === 'string' && loc.trim()) {
           return { region: loc.trim(), regionSource: 'rg' as const };

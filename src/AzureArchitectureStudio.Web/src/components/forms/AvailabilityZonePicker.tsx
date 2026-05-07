@@ -3,6 +3,7 @@ import { Field, Dropdown, Option } from '@fluentui/react-components';
 import { useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../../context/AppContext';
 import { getRegionAvailabilityZones } from '../../services';
+import { resolveKey } from '../../models/resource-registry';
 import type { AzureNodeData } from '../../models';
 
 interface AvailabilityZonePickerProps {
@@ -57,7 +58,7 @@ export default function AvailabilityZonePicker({
       const p = byId.get(cursor.parentId);
       if (!p) break;
       const pData = p.data as AzureNodeData | undefined;
-      if (pData?.typeKey === 'resource-group') {
+      if (pData && resolveKey(pData.typeKey) === 'resource-group') {
         const loc = pData?.properties?.location;
         if (typeof loc === 'string' && loc.trim()) return loc.trim();
         break;
