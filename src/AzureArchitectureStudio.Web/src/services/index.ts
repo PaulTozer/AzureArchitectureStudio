@@ -9,6 +9,8 @@ export {
   listSubscriptionsUnderManagementGroup,
   enrichResourcesWithFullProperties,
   getArmAccessToken,
+  reauthenticate,
+  AUTH_REQUIRED_EVENT,
   listVmSizes,
   type AzureSubscription,
   type AzureResourceGroup,

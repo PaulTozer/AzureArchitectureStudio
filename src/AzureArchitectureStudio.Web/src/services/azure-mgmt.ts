@@ -1,6 +1,21 @@
 import { msalInstance, azureManagementRequest } from './auth-config';
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
 const ARM_BASE = 'https://management.azure.com';
+
+/** Event name fired on `window` whenever ARM token acquisition needs an
+ *  interactive sign-in (MFA expired, conditional access, password change,
+ *  consent required, etc.). UI components can listen and surface a
+ *  banner / button to call `reauthenticate()`. */
+export const AUTH_REQUIRED_EVENT = 'aas:auth-required';
+
+function signalAuthRequired(reason: string) {
+  try {
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: { reason } }));
+  } catch {
+    // ignore
+  }
+}
 
 export interface AzureSubscription {
   id: string;            // /subscriptions/{guid}
@@ -39,7 +54,12 @@ export type ScopeRef =
       subscriptionName: string;
     };
 
-/** Acquire an ARM access token (silent, fall back to popup). */
+/** Acquire an ARM access token silently. Returns null when there is
+ *  no signed-in account or when interaction is required (MFA / CA /
+ *  consent). In the latter case fires the global `aas:auth-required`
+ *  event so the UI can show a re-sign-in prompt. We deliberately do NOT
+ *  fall back to `acquireTokenPopup` here because popups are commonly
+ *  blocked and a hung popup is what makes the app appear to spin. */
 export async function getArmAccessToken(): Promise<string | null> {
   const accounts = msalInstance.getAllAccounts();
   if (accounts.length === 0) return null;
@@ -49,12 +69,39 @@ export async function getArmAccessToken(): Promise<string | null> {
       account: accounts[0],
     });
     return r.accessToken;
+  } catch (err) {
+    if (err instanceof InteractionRequiredAuthError) {
+      signalAuthRequired(err.errorCode || 'interaction_required');
+    } else {
+      // Network or unknown error — surface as auth-required too so the
+      // user has a clear path to recover instead of an endless spinner.
+      signalAuthRequired((err as { errorCode?: string })?.errorCode ?? 'token_error');
+    }
+    return null;
+  }
+}
+
+/** Trigger an interactive re-authentication. Uses `acquireTokenRedirect`
+ *  (with `loginRedirect` as a fallback) because redirect flows are not
+ *  blocked by popup blockers and reliably complete MFA. App state is
+ *  preserved across the redirect via `localStorage`. */
+export async function reauthenticate(): Promise<void> {
+  const accounts = msalInstance.getAllAccounts();
+  try {
+    if (accounts.length > 0) {
+      await msalInstance.acquireTokenRedirect({
+        ...azureManagementRequest,
+        account: accounts[0],
+      });
+    } else {
+      await msalInstance.loginRedirect(azureManagementRequest);
+    }
   } catch {
+    // As a last resort try a popup; user may have to retry.
     try {
-      const r = await msalInstance.acquireTokenPopup(azureManagementRequest);
-      return r.accessToken;
+      await msalInstance.acquireTokenPopup(azureManagementRequest);
     } catch {
-      return null;
+      // give up — banner stays visible so the user can try again
     }
   }
 }
@@ -71,6 +118,13 @@ async function armFetch<T>(path: string, apiVersion: string): Promise<T | null> 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401 || res.status === 403) {
+    // Token was accepted by MSAL but rejected by ARM — typically the
+    // session has been revoked or CA needs re-evaluation. Treat the same
+    // as silent-token failure so the user gets a recovery path.
+    signalAuthRequired(`http_${res.status}`);
+    return null;
+  }
   if (!res.ok) return null;
   return (await res.json()) as T;
 }

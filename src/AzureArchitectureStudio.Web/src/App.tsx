@@ -11,6 +11,7 @@ import { AppProvider, useAppContext } from './context/AppContext';
 import type { StencilModel, AzureServiceModel } from './models';
 import { loadResourceTypeRegistry, isGroupType, getGroupStyle } from './models';
 import TopMenu from './components/TopMenu';
+import AuthInteractionBanner from './components/AuthInteractionBanner';
 import StencilPanel from './components/panels/StencilPanel';
 import DiagramPanel from './components/panels/DiagramPanel';
 import './App.css';
@@ -74,6 +75,7 @@ function AppContent() {
   return (
     <div className="app-layout">
       <TopMenu />
+      <AuthInteractionBanner />
       <div className="app-body">
         {!siderCollapsed && (
           <div className="app-sider">

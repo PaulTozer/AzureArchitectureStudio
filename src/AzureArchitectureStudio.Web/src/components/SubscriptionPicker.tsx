@@ -49,11 +49,20 @@ export default function ScopePicker() {
         listManagementGroups(),
         listSubscriptions(),
       ]);
+
+      // If BOTH lists came back empty, the request almost certainly
+      // failed (auth expired, MFA required, network down). Don't clobber
+      // the previously selected scope or the cached lists in that case
+      // — the auth-required banner will give the user a recovery path.
+      const looksLikeAuthFailure = mgList.length === 0 && subList.length === 0;
+      if (looksLikeAuthFailure) return;
+
       setMgs(mgList);
       setSubs(subList);
       setRgsBySub({}); // invalidate RG cache; will lazy-reload on hover
 
-      // If the previously selected scope is gone, clear it.
+      // Only clear the previously-selected scope when the refresh
+      // *succeeded* and no longer contains it.
       if (selectedScope) {
         const stillThere =
           (selectedScope.kind === 'managementGroup' && mgList.some((m) => m.name === selectedScope.name))
