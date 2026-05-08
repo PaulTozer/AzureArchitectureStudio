@@ -90,6 +90,21 @@ interface SchemaFieldProps {
 }
 
 function SchemaField({ field, value, properties, schema, onChange, onMultiChange, nodeId }: SchemaFieldProps) {
+  // True when this field is required AND the user hasn't filled it in. Drives
+  // the Field's `validationState` so the empty input is visually flagged in
+  // addition to the asterisk on the label.
+  const isMissing = (() => {
+    if (!field.required) return false;
+    const effective = value !== undefined ? value : field.defaultValue;
+    if (effective === undefined || effective === null) return true;
+    if (typeof effective === 'string') return effective.trim() === '';
+    if (Array.isArray(effective)) return effective.length === 0;
+    return false;
+  })();
+  const fieldValidation = isMissing
+    ? { validationState: 'error' as const, validationMessage: 'Required' }
+    : {};
+
   switch (field.type) {
     case 'string':
     case 'password':
@@ -97,7 +112,7 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
         dbg('SchemaField:render', { key: field.key, value });
       }
       return (
-        <Field label={field.label} required={field.required}>
+        <Field label={field.label} required={field.required} {...fieldValidation}>
           <Input
             type={field.type === 'password' ? 'password' : 'text'}
             value={(value as string) ?? ''}
@@ -115,7 +130,7 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
 
     case 'number':
       return (
-        <Field label={field.label} required={field.required}>
+        <Field label={field.label} required={field.required} {...fieldValidation}>
           <Input
             type="number"
             value={String(value ?? field.defaultValue ?? 0)}
@@ -139,7 +154,7 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
     case 'select': {
       const options = resolveOptions(field);
       return (
-        <Field label={field.label} required={field.required}>
+        <Field label={field.label} required={field.required} {...fieldValidation}>
           <Dropdown
             value={options.find((o) => o.value === value)?.label ?? ''}
             onOptionSelect={(_, d) => {
@@ -184,7 +199,7 @@ function SchemaField({ field, value, properties, schema, onChange, onMultiChange
 
     case 'radio':
       return (
-        <Field label={field.label} required={field.required}>
+        <Field label={field.label} required={field.required} {...fieldValidation}>
           <RadioGroup
             value={(value as string) ?? ''}
             onChange={(_, d) => onChange(field.key, d.value)}

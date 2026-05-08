@@ -93,18 +93,36 @@ public class AzureOpenAIChatService : IChatService
 
         var actions = new List<DiagramAction>();
 
-        // Tool-calling loop. Cap is generous because complex prompts
-        // ("build me an Azure landing zone") need many rounds: docs
-        // searches, then top-level mgmt-groups, then subscriptions, then
-        // platform RGs, then per-RG resources. The model also hands
-        // control back between layers so it can re-read the snapshot,
-        // which costs an iteration each time. 40 is enough headroom for
-        // a full CAF landing-zone build without risking runaway.
-        const int MaxIterations = 40;
+        // Tool-calling loop. The hard cap below is a safety net to stop
+        // genuinely runaway conversations (model stuck in a tool-calling
+        // loop) — it is intentionally large so that complex multi-tier
+        // CAF / landing-zone builds finish in a single turn. The PRIMARY
+        // way the user controls runtime is the Stop button in the UI:
+        // aborting the SSE fetch flips `ct`, which we surface as a
+        // graceful "stopped by user" finish (the partial diagram already
+        // streamed via `action` events stays on the canvas).
+        const int MaxIterations = 200;
         var hitCap = false;
         var continueNudgesUsed = 0;
         for (var step = 0; step < MaxIterations; step++)
         {
+            // Honour user-cancellation between iterations as well as
+            // inside the OpenAI call. Cooperative — checked at the top
+            // of each round so we never start a new completion after
+            // the user has clicked Stop.
+            if (ct.IsCancellationRequested)
+            {
+                var stopped = new ChatResponse
+                {
+                    Success = true,
+                    Message = "Stopped at your request. The resources I'd already placed are still on the canvas.",
+                    Actions = actions,
+                };
+                progress?.Report(new ChatProgressEvent { Kind = "assistant", Detail = stopped.Message });
+                progress?.Report(new ChatProgressEvent { Kind = "done", Final = stopped });
+                return stopped;
+            }
+
             // On the final iteration, force the model to wrap up rather
             // than emit more tool calls (which we'd silently drop).
             if (step == MaxIterations - 1)
@@ -122,6 +140,22 @@ public class AzureOpenAIChatService : IChatService
                     Title = step == 0 ? "Thinking…" : $"Reasoning (round {step + 1})…",
                 });
                 completion = await chatClient.CompleteChatAsync(messages, options, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // User clicked Stop while the model was thinking. Return a
+                // success response carrying whatever was built so far so
+                // the client treats the partial diagram as the final
+                // outcome rather than as an error.
+                var stopped = new ChatResponse
+                {
+                    Success = true,
+                    Message = "Stopped at your request. The resources I'd already placed are still on the canvas.",
+                    Actions = actions,
+                };
+                progress?.Report(new ChatProgressEvent { Kind = "assistant", Detail = stopped.Message });
+                progress?.Report(new ChatProgressEvent { Kind = "done", Final = stopped });
+                return stopped;
             }
             catch (Exception ex)
             {
@@ -170,17 +204,16 @@ public class AzureOpenAIChatService : IChatService
                     messages.Add(new ToolChatMessage(call.Id, toolResult));
                 }
 
-                // After a few rounds without explicit progress, nudge the
-                // model to keep building rather than stop early. We add a
-                // short user-role hint reminding it of the iteration
-                // budget so it knows it has space to finish multi-tier
-                // designs.
+                // Periodic nudge to keep multi-tier builds moving when the
+                // model has gone several rounds without finishing. We
+                // deliberately don't quote the remaining round count any
+                // more — the cap is now a safety net, not a budget the
+                // model needs to ration against.
                 if (step > 0 && step % 8 == 0)
                 {
-                    var remaining = MaxIterations - step - 1;
                     messages.Add(new UserChatMessage(
-                        $"(System note: ~{remaining} tool-calling rounds remain. " +
-                        "If your design is incomplete — e.g. management groups exist but no subscriptions, or subscriptions exist but no resource groups, or resource groups exist with no resources inside them — keep adding the missing layers in this turn before replying.")
+                        "(System note: keep going. " +
+                        "If your design is incomplete — e.g. management groups exist but no subscriptions, or subscriptions exist but no resource groups, or resource groups exist with no resources inside them — keep adding the missing layers in this turn before replying. The user can press Stop at any time if they want to halt.")
                     );
                 }
 
@@ -227,7 +260,7 @@ public class AzureOpenAIChatService : IChatService
         {
             Success = true,
             Message = hitCap
-                ? "I've placed the resources I had time to build in this turn. The diagram may be incomplete — ask me to continue and I'll keep adding the remaining layers."
+                ? "I hit the safety limit on tool-calling rounds while building this. The diagram may be incomplete — ask me to continue and I'll keep adding the remaining layers, or press Stop next time if you want me to halt sooner."
                 : "I've made the requested changes. Let me know what to do next.",
             Actions = actions,
         };
@@ -339,6 +372,85 @@ public class AzureOpenAIChatService : IChatService
     private static bool IsSubnet(string? t) => IsType(t, "subnet", "subnets");
     private static bool IsPrivateEndpoint(string? t) => IsType(t, "private-endpoint", "private-endpoints");
     private static bool IsPrivateDnsZone(string? t) => IsType(t, "private-dns-zone", "private-dns-zones", "dns-zone", "dns-zones");
+    private static bool IsManagementGroup(string? t) => IsType(t, "management-group", "management-groups");
+    private static bool IsSubscription(string? t) => IsType(t, "subscription", "subscriptions");
+
+    /// <summary>
+    /// Fuzzy match for typeKeys that represent the same Azure resource family
+    /// across the project's two catalogs (`resource-types.json` uses canonical
+    /// keys like `appservice-plan`, `azure-services.json` uses category-suffixed
+    /// keys like `app-service-plans--web`). Used by the dependency resolver so
+    /// a Web App that depends on `appservice-plan` is satisfied by a node with
+    /// typeKey `app-service-plans--web` and vice versa.
+    /// </summary>
+    private static bool IsSameFamily(string? declared, string? required)
+    {
+        if (string.IsNullOrEmpty(declared) || string.IsNullOrEmpty(required)) return false;
+        if (string.Equals(declared, required, StringComparison.OrdinalIgnoreCase)) return true;
+        var d = NormaliseFamily(declared);
+        var r = NormaliseFamily(required);
+        return string.Equals(d, r, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormaliseFamily(string typeKey)
+    {
+        // Strip category suffix ("--web", "--app-services", "--monitor", etc.)
+        var s = typeKey;
+        var dd = s.IndexOf("--", StringComparison.Ordinal);
+        if (dd > 0) s = s.Substring(0, dd);
+        s = s.ToLowerInvariant();
+        // Canonicalise common synonyms / pluralisations to a single name.
+        return s switch
+        {
+            "appserviceplan" or "appservice-plan" or "appservice-plans"
+                or "app-service-plan" or "app-service-plans"
+                or "server-farm" or "server-farms" or "serverfarm" or "serverfarms"
+                => "appservice-plan",
+            "web-app" or "web-apps" or "webapp" or "webapps"
+                or "app-service" or "app-services" or "appservice" or "appservices"
+                => "web-app",
+            "function-app" or "function-apps" or "functionapp" or "functionapps"
+                or "azure-function" or "azure-functions"
+                => "function-app",
+            "sql-server" or "sql-servers" or "sqlserver" or "sqlservers"
+                => "sql-server",
+            "sql-database" or "sql-databases" or "sqldatabase" or "sqldatabases"
+                or "sql-db" or "sql-dbs"
+                => "sql-database",
+            "storage-account" or "storage-accounts" or "storageaccount" or "storageaccounts"
+                => "storage-account",
+            "key-vault" or "key-vaults" or "keyvault" or "keyvaults"
+                => "key-vault",
+            "log-analytics-workspace" or "log-analytics-workspaces"
+                or "loganalyticsworkspace" or "loganalyticsworkspaces"
+                => "log-analytics-workspace",
+            "application-insights" or "applicationinsights"
+                => "application-insights",
+            "public-ip" or "public-ips" or "public-ip-address" or "public-ip-addresses"
+                or "publicip" or "publicipaddress"
+                => "public-ip",
+            "network-interface" or "network-interfaces" or "nic" or "nics"
+                or "networkinterface" or "networkinterfaces"
+                => "network-interface",
+            "virtual-machine" or "virtual-machines" or "vm" or "vms"
+                or "virtualmachine" or "virtualmachines"
+                => "virtual-machine",
+            "virtual-network" or "virtual-networks" or "vnet" or "vnets"
+                or "virtualnetwork" or "virtualnetworks"
+                => "virtual-network",
+            "subnet" or "subnets" => "subnet",
+            "private-endpoint" or "private-endpoints" or "privateendpoint" or "privateendpoints"
+                => "private-endpoint",
+            "private-dns-zone" or "private-dns-zones" or "dns-zone" or "dns-zones"
+                => "private-dns-zone",
+            "resource-group" or "resource-groups" or "resourcegroup" or "resourcegroups"
+                => "resource-group",
+            "management-group" or "management-groups"
+                => "management-group",
+            "subscription" or "subscriptions" => "subscription",
+            _ => s
+        };
+    }
 
     /// <summary>
     /// Build a short, human-readable headline for a tool call so the UI
@@ -432,7 +544,7 @@ public class AzureOpenAIChatService : IChatService
             {
                 var parent = request.Nodes.FirstOrDefault(n =>
                     string.Equals(n.Id, node.ParentId, StringComparison.OrdinalIgnoreCase));
-                if (parent != null && IsType(parent.TypeKey, dep.TargetType))
+                if (parent != null && IsSameFamily(parent.TypeKey, dep.TargetType))
                 {
                     matched = parent;
                     source = "parent";
@@ -445,7 +557,7 @@ public class AzureOpenAIChatService : IChatService
                 foreach (var n in request.Nodes)
                 {
                     if (!connectedIds.Contains(n.Id)) continue;
-                    if (!IsType(n.TypeKey, dep.TargetType)) continue;
+                    if (!IsSameFamily(n.TypeKey, dep.TargetType)) continue;
                     matched = n;
                     source = "edge";
                     break;
@@ -468,7 +580,7 @@ public class AzureOpenAIChatService : IChatService
                     {
                         var ip = request.Nodes.FirstOrDefault(n =>
                             string.Equals(n.Id, inter.ParentId, StringComparison.OrdinalIgnoreCase));
-                        if (ip != null && IsType(ip.TypeKey, dep.TargetType))
+                        if (ip != null && IsSameFamily(ip.TypeKey, dep.TargetType))
                         {
                             matched = ip;
                             source = "edge";
@@ -487,7 +599,7 @@ public class AzureOpenAIChatService : IChatService
                         if (otherId == null) continue;
                         var other = request.Nodes.FirstOrDefault(n =>
                             string.Equals(n.Id, otherId, StringComparison.OrdinalIgnoreCase));
-                        if (other != null && IsType(other.TypeKey, dep.TargetType))
+                        if (other != null && IsSameFamily(other.TypeKey, dep.TargetType))
                         {
                             viaEdge = other;
                             break;
@@ -521,7 +633,7 @@ public class AzureOpenAIChatService : IChatService
             if (matched == null)
             {
                 // Suggest the simplest fix: connect to an existing candidate, or create one.
-                var candidate = request.Nodes.FirstOrDefault(n => IsType(n.TypeKey, dep.TargetType));
+                var candidate = request.Nodes.FirstOrDefault(n => IsSameFamily(n.TypeKey, dep.TargetType));
                 var fixHint = candidate != null
                     ? $"call connect_nodes(sourceId='{node.Id}', targetId='{candidate.Id}')" +
                       (string.IsNullOrEmpty(candidate.Name) ? "" : $" /* {candidate.Name} */")
@@ -596,7 +708,7 @@ Before you finish, every resource on the canvas must have everything it needs to
 After every change, briefly re-check the diagram and ADD missing dependencies in the same turn. Use the exact typeKeys from the catalog below; if a key isn't in the catalog, pick the closest available one and note the substitution.
 
 # Tools available
-- add_node(typeKey, name, parentId?, x?, y?) – place a new Azure resource on the canvas. typeKey MUST be one of the keys in the catalog below. Pass parentId to nest the new node inside an existing group node (Resource Group, Virtual Network, Subnet, etc.). Returns the generated node id (always of the form `ai-xxxxxxxxx`), which you MUST use verbatim for connect_nodes and as parentId for children. **NEVER pass a human-readable name as parentId** — only the `ai-...` id returned by a previous add_node call (or an existing id from the snapshot) is valid.
+- add_node(typeKey, name, parentId?, x?, y?) – place a new Azure resource on the canvas. typeKey MUST be one of the keys in the catalog below. Pass parentId to nest the new node inside an existing group node (Resource Group, Virtual Network, Subnet, etc.). Returns the generated node id as a string starting with `ai-` followed by 9 hex characters (for example `ai-1a2b3c4d5`). You MUST capture each tool's actual return value and pass THAT exact id back as `parentId` / `sourceId` / `targetId` in subsequent calls. **NEVER pass a human-readable name as parentId, and NEVER pass a placeholder like `ai-xxxxxxxxx`, `ai-yyyyyyyyy`, or any literal example id from these instructions** — only an `ai-...` id that was actually returned by a previous add_node call (or an existing id from the snapshot) is valid. If you don't yet have an id for a parent, create the parent first with add_node, read its returned id, and use it.
 - connect_nodes(sourceId, targetId) – draw an arrow between two nodes already on the canvas.
 - remove_node(id) – delete a node by id.
 - clear_diagram() – wipe the canvas. Only call when the user explicitly asks to start over.
@@ -631,22 +743,35 @@ Common dependency wiring patterns:
 
 When calling add_node, do not pass x or y for nested children — leave them blank and they'll be auto-laid-out inside the parent.
 
-# Build complex designs LAYER BY LAYER — never stop after the top tier
-For multi-tier requests (landing zones, hub-spoke networks, multi-region apps, etc.) you have many tool-calling rounds available. **Do not declare yourself done after creating only the outermost containers.** Build the whole hierarchy in this single turn:
+# Scope check FIRST — match the user's request, no more, no less
+**Before you build anything, decide what the user actually asked for and build only that.** Do this by reading the user's words for intent, not by pattern-matching on magic phrases:
+
+- The user mentioned "management group structure" / "management groups" / "MG hierarchy" / "management hierarchy" / "org structure" / "governance structure" — and did NOT say "landing zone", "with subscriptions", "with resources", "full", "complete", "end-to-end", or name any specific resource → **build ONLY the management-group tree.** No subscriptions, no resource groups, no VNets, no firewalls, no bastions, nothing else. The MG tree IS the complete answer here.
+- The user asked for a **"landing zone" / "CAF landing zone" / "Cloud Adoption Framework" / "CAF methodology" / "CAF best practices" / "enterprise-scale" / "full platform"** **without naming a specific workload** → build the full multi-layer CAF hierarchy described in the CAF section (MGs → subscriptions → RGs → platform resources). The phrases "CAF methodology" / "using CAF" / "Cloud Adoption Framework" are full-build triggers, NOT narrow asks.
+- The user asked for a **named workload architecture** ("AVD architecture", "build me an AKS architecture", "3-tier web app", "hub-and-spoke network", "data platform", "AI app", "VDI environment", "SAP on Azure", etc.), with or without a "CAF" / "methodology" / "reference architecture" / "best practice" qualifier → **build the FULL canonical reference architecture for that workload.** This means: the workload's standard VNet / subnets / compute / storage / monitoring / identity dependencies all wired up — not just one or two icons. If the user ALSO said "CAF" / "landing zone" / "methodology" / "enterprise-scale", wrap the workload inside the CAF scaffolding (place the workload in a Corp Landing Zone subscription with a Connectivity hub, Identity, and Management subscriptions present too — see the Workload-specific recipes section below).
+- The user asked for a specific single component ("a web app", "an AKS cluster", "one storage account") → build only that component plus its REQUIRED dependencies. Don't expand into adjacent areas.
+- The user asked an informational question ("how does X work", "what is Y", "compare A vs B") → answer with `microsoft_docs_search`; don't touch the diagram.
+
+**"Build only X" is itself a complete answer** — but a "FULL reference architecture for X" must include all the standard supporting pieces (network, identity, monitoring, storage, etc.). A diagram with 2 management-group icons is NOT a finished CAF/AVD/landing-zone build.
+
+# Build complex designs LAYER BY LAYER — only when the user asked for a multi-layer design
+This section applies to any request that asks for a multi-tier design: landing zones, hub-spoke networks, multi-region apps, named workload architectures (AVD, AKS, 3-tier web app, data platform, AI/ML app, VDI, SAP, etc.), full platform, end-to-end architecture, anything qualified with "CAF" / "methodology" / "reference architecture" / "enterprise-scale" / "best practice". For narrower requests, the Scope-check section above takes precedence.
+
+For multi-tier requests you have many tool-calling rounds available. **Do not declare yourself done after creating only the outermost containers.** Build the whole hierarchy in this single turn:
 
 1. Top container layer (e.g. management groups for a landing zone, hub VNet for hub-and-spoke).
 2. Mid containers (subscriptions inside management groups; spoke VNets; resource groups; etc.).
 3. Inner containers (resource groups inside subscriptions; subnets inside VNets).
 4. Leaf resources (the actual services that live inside the inner containers).
 
-After every batch of `add_node` calls, mentally re-read the snapshot. If ANY container is empty when it shouldn't be (e.g. you added a "Platform" management group but no Identity/Management/Connectivity subscriptions under it; or a "Connectivity" subscription with no hub-vnet RG inside; or a hub-vnet RG with no actual hub VNet, firewall, bastion etc.) — KEEP CALLING add_node in the same turn. Only emit your final text reply when every container has appropriate contents.
+After every batch of `add_node` calls, mentally re-read the snapshot. If ANY container that the user's request DOES include is empty when it shouldn't be — KEEP CALLING add_node in the same turn. Only emit your final text reply when every in-scope container has appropriate contents.
 
 ## Critical: NEVER promise to continue later
 You have ONE turn to finish the build. The user cannot "let you continue" — once you stop calling tools and emit a text reply, the turn is over and the conversation moves on. Therefore:
 
 - **NEVER** say things like "I'll continue building", "Continuing build…", "Next, I will add subscriptions", "let me know to proceed", or "I'll add the rest in the next message". These phrases are FORBIDDEN. If you catch yourself about to write one, instead immediately make more tool calls to finish the work right now.
-- **NEVER** end a turn with the design half-built. If management groups exist but subscriptions don't, KEEP CALLING add_node. If subscriptions exist but resource groups don't, KEEP CALLING add_node. If RGs exist but they're empty of resources, KEEP CALLING add_node. Only stop when every layer of the hierarchy described in the relevant section above is fully populated.
-- Your final text reply should describe what was built (past tense), NOT what you're about to build. If a layer is missing, the answer is more tool calls, not a promise to do them later.
+- **NEVER** end a turn with the design half-built RELATIVE TO THE USER'S REQUEST. (If the user asked only for the MG tree, an MG-only diagram is COMPLETE — not half-built.) For a full landing-zone request: if MGs exist but subscriptions don't, KEEP CALLING add_node; if subscriptions exist but RGs don't, KEEP CALLING add_node; if RGs are empty of resources, KEEP CALLING add_node.
+- Your final text reply should describe what was built (past tense), NOT what you're about to build. If a layer is missing AND the user asked for it, the answer is more tool calls, not a promise to do them later.
 
 ## Critical: NEVER call clear_diagram to "start over"
 `clear_diagram` is ONLY for cases where the user explicitly says "start over", "clear the canvas", "wipe everything and start fresh", etc. The server enforces this by refusing any second `clear_diagram` call within a single turn.
@@ -657,23 +782,41 @@ If you find yourself reasoning "let me clear and try again":
 - Restarting wastes the user's time and produces worse results because each restart loses context. Always prefer "patch what's there" over "rebuild from scratch".
 
 # Azure landing zone (CAF) hierarchy
-The instructions below apply ONLY when the user asks for a full landing zone build (phrases like "full landing zone", "enterprise-scale landing zone", "CAF landing zone", "build me a landing zone", etc.).
+The instructions in *this section* apply whenever the user asks for a full landing zone OR a named workload qualified with a CAF/methodology phrase. Trigger phrases include (case-insensitive, partial-match): "landing zone", "CAF landing zone", "Cloud Adoption Framework", "CAF methodology", "CAF best practice(s)", "enterprise-scale", "enterprise scale", "complete platform", "full platform", "reference architecture using CAF", "build me a landing zone", or any of those qualifiers attached to a workload (e.g. "AVD architecture using CAF methodology", "AKS reference architecture in a CAF landing zone").
 
-**If the user asks for something narrower, respect that scope and DO NOT build the full landing zone.** Examples:
-- "Show me the management group structure" / "draw the MG hierarchy" / "CAF management groups" → build ONLY the management-group tree (Tenant Root + child MGs connected by arrows). Do NOT add subscriptions, resource groups, or platform resources unless they're part of the MG diagram itself.
-- "Add the platform subscriptions" → add only the subscription containers under their MGs; don't fill them with RGs / resources unless asked.
-- "Build the connectivity hub" → build only the hub VNet + firewall + bastion + DNS zones, not the rest of the landing zone.
-- "Show the policy assignments for landing zones" → answer informationally; don't build the full diagram.
+When a workload is named alongside a CAF qualifier, you MUST build BOTH:
+1. The CAF scaffolding (MGs → subscriptions → RGs → platform resources, as described later in this section), AND
+2. The workload's full reference architecture inside the appropriate Landing Zone subscription (see the Workload-specific recipes section).
 
-When in doubt about scope, build the smaller / more literal interpretation of the request and mention in your reply what else you could add next. Do NOT proactively expand a narrow request into a full landing-zone build.
+For narrower asks (anything mentioning management groups, subscriptions, or hubs **without** any of the trigger phrases above and **without** a workload name), the **Scope check FIRST** rule at the top of these instructions takes precedence — build only what was asked for. Do NOT proactively expand a narrow request into a full landing-zone build.
 
-When the user does ask for a full landing zone, follow Microsoft Cloud Adoption Framework Enterprise-Scale.
+## Management group hierarchy — universal rules (apply whenever you place ANY management-group)
+**`management-groups` is a LEAF node (small icon + label), not a container.** These rules ALWAYS apply, both for the standalone "MG structure" request and as part of a full landing zone:
+1. Place EVERY management group as a TOP-LEVEL node — never pass `parentId` between management groups, and never set parentId at all on a management-group node. Doing so makes the children invisibly stack at (0,0).
+2. After adding the MGs, you MUST call `connect_nodes(parentMgId, childMgId)` for every parent→child edge in the tree. The MG hierarchy is invisible without these arrows. **A diagram with MG icons but no arrows is broken — always wire them up in the same turn.**
+3. Use the `ai-...` id returned by each `add_node` call as the source/target — never the human-readable name.
 
-**IMPORTANT — render management groups as a TREE, not as nested boxes:**
-- `management-groups` is a LEAF node type (small icon + label), not a container. Do NOT pass `parentId` between management groups, and do NOT try to nest one MG inside another — they will visually overlap.
-- Instead, place every management group as a top-level node (no parentId) and use `connect_nodes(parentMgId, childMgId)` to draw an arrow from each parent MG down to each child MG. This produces the standard CAF MG hierarchy diagram (Tenant Root → Platform / Landing Zones / Sandbox / Decommissioned → child MGs → subscriptions).
-- Subscriptions are containers. Place each `subscriptions` node as a top-level node (no parentId) and use `connect_nodes(mgId, subscriptionId)` to attach it to its owning management group in the tree. Resources / resource-groups for that subscription go INSIDE the subscription container as normal.
-- Result: the top half of the canvas shows the MG tree (small MG icons + arrows), and the bottom half shows the subscription containers with their resource groups and resources inside.
+### Standard CAF management group structure (use this any time the user asks for the management-group / org / governance hierarchy in any phrasing, with or without the words "create", "standard", "a", "the", etc.)
+Build EXACTLY this tree, nothing more (no subscriptions, no resources, no RGs, no VNets):
+```
+Tenant Root Group
+├── Platform
+│   ├── Identity
+│   ├── Management
+│   └── Connectivity
+├── Landing Zones
+│   ├── Corp
+│   └── Online
+├── Sandbox
+└── Decommissioned
+```
+Steps:
+1. `add_node(typeKey="management-groups", name="Tenant Root Group")` → save the returned id.
+2. `add_node` for each child MG (Platform, Landing Zones, Sandbox, Decommissioned) — all top-level, no parentId. Save each id.
+3. `add_node` for the grand-children (Identity, Management, Connectivity under Platform; Corp, Online under Landing Zones) — also top-level, no parentId. Save each id.
+4. `connect_nodes` for every parent→child edge: 4 from Tenant Root, 3 from Platform, 2 from Landing Zones. That's 9 edges total. **Do NOT skip step 4** — without it the diagram is just a row of disconnected icons.
+
+When the user does ask for a full landing zone, follow Microsoft Cloud Adoption Framework Enterprise-Scale (the section below extends the MG hierarchy with subscriptions, resource groups, and platform resources).
 
 The full structure to build (use exactly these typeKeys: `management-groups`, `subscriptions`, `resource-group`):
 
@@ -701,6 +844,41 @@ Order of build (and don't stop until ALL of it exists):
 5. The actual platform resources INSIDE those RGs — at minimum: in rg-management add a `log-analytics-workspace`; in rg-connectivity-hub add a `virtual-network` named `vnet-hub`, then subnets (`AzureFirewallSubnet`, `AzureBastionSubnet`, `GatewaySubnet`), then an `azure-firewall` in the firewall subnet and a `bastion` in the bastion subnet; in rg-identity add a `key-vault`.
 
 The diagram is incomplete unless the platform resources actually exist — empty subscription / RG containers alone are NOT a landing zone.
+
+# Workload-specific reference architectures
+When the user names a workload (with or without a CAF qualifier), build that workload's **full** Microsoft reference architecture, not a placeholder. The recipes below are the canonical topologies — follow them in order, and do not stop after creating the outermost containers. If the user also said "CAF" / "landing zone" / "methodology" / "enterprise-scale", build the CAF scaffolding FIRST (per the section above), then place the workload inside the appropriate Landing Zone subscription (Corp for internal/enterprise-connected workloads like AVD, AKS, internal apps; Online for internet-facing workloads).
+
+## Azure Virtual Desktop (AVD) — CAF-aligned reference architecture
+Trigger phrases: "AVD", "Azure Virtual Desktop", "virtual desktop", "VDI", "WVD", "Windows Virtual Desktop". Build everything below in a single turn:
+
+**Identity** (in the Identity subscription's `rg-identity`, or in `rg-identity` if no full CAF was requested):
+- `key-vault` named `kv-avd-identity` (for AVD service principal / FSLogix secrets).
+
+**Connectivity / hub** (in the Connectivity subscription's `rg-connectivity-hub`):
+- `virtual-network` named `vnet-hub` with subnets `AzureFirewallSubnet`, `AzureBastionSubnet`, `GatewaySubnet`.
+- `azure-firewall` in `AzureFirewallSubnet` with a `public-ip` connected.
+- `bastion` in `AzureBastionSubnet` with a `public-ip` connected.
+
+**AVD spoke** (Corp Landing Zone subscription, or top-level if no CAF was requested):
+- `resource-group` named `rg-avd-network` containing `virtual-network` named `vnet-avd-spoke` with subnet `snet-avd-hosts`. Connect the spoke VNet to the hub VNet (peering edge).
+- `resource-group` named `rg-avd-hostpool` containing the AVD control plane:
+   - `host-pools` named `hp-avd` for the AVD host pool. (If the catalog also lists `azure-virtual-desktop`, you may add that as the workspace.)
+   - Session hosts: place 2–3 `virtual-machine` nodes inside `snet-avd-hosts` (parentId = the snet-avd-hosts subnet id, NOT the resource group). Each VM needs a `network-interface` (parentId = same subnet) and a managed `disk` for the OS.
+- `resource-group` named `rg-avd-storage` containing:
+   - `storage-account` named `stavdfslogix<n>` for FSLogix profiles.
+   - `private-endpoint` for the storage account, placed in `snet-avd-hosts` (or its own `snet-pe`), wired to the storage account.
+   - `private-dns-zone` named `privatelink.file.core.windows.net`, linked to `vnet-avd-spoke` (and ideally the hub).
+- `resource-group` named `rg-avd-monitoring` containing `log-analytics-workspace` named `law-avd` and `application-insights` named `appi-avd`.
+
+**Wiring** (use connect_nodes for every edge):
+- Spoke VNet ↔ hub VNet (peering).
+- FSLogix storage ↔ private endpoint ↔ private DNS zone.
+- Session hosts → key vault, log analytics, FSLogix storage (via PE).
+
+The AVD diagram is INCOMPLETE if any of: vnet-hub with subnets+firewall+bastion, vnet-avd-spoke with snet-avd-hosts, FSLogix storage account with private endpoint, or log-analytics-workspace are missing. Keep adding nodes until all four exist.
+
+## Other named workloads
+For any other named workload ("AKS", "3-tier web app", "data platform", "SAP on Azure", "AI/ML app", etc.), build the canonical Microsoft Azure Architecture Center reference: VNet + dedicated subnets, the workload's primary compute (cluster / app service plan / VM scale set / etc.), required data services, monitoring (Log Analytics + App Insights), identity (Key Vault), and any private endpoints + private DNS zones the workload normally uses. Default to "secure by default" — private endpoints, no public RDP/SSH, NSGs on subnets, Bastion for admin access. If wrapped in a CAF context, place the whole stack in a Corp (or Online, for internet-facing) Landing Zone subscription.
 
 # Reply style
 - For diagram-build actions, keep replies short (1–4 sentences). After building, summarise what you placed and any best-practice rationale (e.g. "Added App Service Plan + Web App for the tier, Azure SQL for the data tier, and a Storage Account for blobs — following the Azure Architecture Center 'Basic web application' reference.").
@@ -860,6 +1038,19 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     double? x = args.RootElement.TryGetProperty("x", out var xe) && xe.ValueKind == JsonValueKind.Number ? xe.GetDouble() : null;
                     double? y = args.RootElement.TryGetProperty("y", out var ye) && ye.ValueKind == JsonValueKind.Number ? ye.GetDouble() : null;
                     string? parentId = parentIdEarly;
+                    // Detect placeholder ids the model sometimes copies from
+                    // the docstring (`ai-xxxxxxxxx`, `ai-yyyyyyyyy`, etc.) —
+                    // surface a more actionable error than "Unknown parentId".
+                    if (!string.IsNullOrWhiteSpace(parentId)
+                        && System.Text.RegularExpressions.Regex.IsMatch(parentId,
+                            @"^ai-([xyz])\1{8,}$"))
+                    {
+                        return (
+                            $"Placeholder parentId '{parentId}' is not a real id. " +
+                            $"`ai-xxxxxxxxx` in the docstring is a SHAPE EXAMPLE — use the actual id " +
+                            $"that a previous add_node call returned (or omit parentId to create a top-level node).",
+                            null, null);
+                    }
                     if (!string.IsNullOrWhiteSpace(parentId)
                         && !request.Nodes.Any(existing => existing.Id == parentId))
                     {
@@ -893,11 +1084,51 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                         }
                     }
 
+                    // CAF management-group / subscription rules — enforced server-side
+                    // because the model keeps stamping parentId between MGs and putting
+                    // subscriptions inside MGs. Both produce broken layouts (MGs are
+                    // leaf icons, not containers, and subscriptions clamped inside a
+                    // leaf parent collapse to 0,0).
+                    //
+                    // Strategy: silently strip the illegal parentId AND queue a
+                    // connect_nodes(parent → new node) edge so the visible result is
+                    // a top-level node connected to its intended parent — exactly
+                    // the CAF tree diagram we want.
+                    var extras = new List<DiagramAction>();
+
+                    string? autoEdgeFromParent = null; // queue an edge after id is generated
+                    if (!string.IsNullOrEmpty(parentId))
+                    {
+                        var parentNode = request.Nodes.FirstOrDefault(p => p.Id == parentId);
+                        if (parentNode != null)
+                        {
+                            // MG → MG: never nest. Replace parentId with edge.
+                            if (IsManagementGroup(typeKey) && IsManagementGroup(parentNode.TypeKey))
+                            {
+                                autoEdgeFromParent = parentNode.Id;
+                                parentId = null;
+                            }
+                            // Subscription → MG: subscriptions are top-level containers
+                            // attached to their MG by an edge, not by parentId.
+                            else if (IsSubscription(typeKey) && IsManagementGroup(parentNode.TypeKey))
+                            {
+                                autoEdgeFromParent = parentNode.Id;
+                                parentId = null;
+                            }
+                            // Anything → MG: MGs are LEAVES, can't contain anything.
+                            // Promote child to top-level and connect MG → child.
+                            else if (IsManagementGroup(parentNode.TypeKey))
+                            {
+                                autoEdgeFromParent = parentNode.Id;
+                                parentId = null;
+                            }
+                        }
+                    }
+
                     // Private endpoints must live in a dedicated subnet under a VNet.
                     // Be aggressive: regardless of what parentId the model passed (or
                     // even if it passed nothing), find/create a 'snet-private-endpoints'
                     // subnet under the diagram's VNet and force the PE there.
-                    var extras = new List<DiagramAction>();
                     if (IsPrivateEndpoint(typeKey))
                     {
                         // Locate a VNet to host this PE.
@@ -974,9 +1205,33 @@ Each entry is `<typeKey> — <display name>`. ONLY these typeKeys are valid for 
                     var addedSnap = new DiagramNodeSnapshot { Id = id, TypeKey = typeKey, Name = name, ParentId = parentId };
                     request.Nodes.Add(addedSnap);
 
-                    var resultMsg = extras.Count > 0
-                        ? $"Added node id={id} (auto-created dedicated PE subnet id={extras[0].Id} — use that subnet's id for additional private-endpoint nodes)"
-                        : $"Added node id={id}";
+                    // If we stripped a parentId because the model tried to nest under
+                    // a management group, materialize the intended hierarchy as an
+                    // edge instead. Persist it on the request snapshot AND emit a
+                    // connect_nodes extra action so the client renders the arrow.
+                    if (!string.IsNullOrEmpty(autoEdgeFromParent))
+                    {
+                        if (!request.Edges.Any(e => e.Source == autoEdgeFromParent && e.Target == id))
+                        {
+                            request.Edges.Add(new DiagramEdgeSnapshot { Source = autoEdgeFromParent, Target = id });
+                            extras.Add(new DiagramAction
+                            {
+                                Type = "connect_nodes",
+                                SourceId = autoEdgeFromParent,
+                                TargetId = id,
+                            });
+                        }
+                    }
+
+                    var resultMsg = $"Added node id={id}";
+                    if (!string.IsNullOrEmpty(autoEdgeFromParent))
+                    {
+                        resultMsg += $" (auto-connected from parent {autoEdgeFromParent}; management groups are leaves — never use them as parentId, use connect_nodes instead)";
+                    }
+                    else if (extras.Count > 0 && IsSubnet(extras[0].TypeKey))
+                    {
+                        resultMsg = $"Added node id={id} (auto-created dedicated PE subnet id={extras[0].Id} — use that subnet's id for additional private-endpoint nodes)";
+                    }
 
                     // Tell the model about any required deps we know are still missing
                     // so it can fix them up rather than us silently shipping a node with

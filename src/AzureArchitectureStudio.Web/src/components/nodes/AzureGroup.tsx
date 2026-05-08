@@ -40,7 +40,10 @@ function AzureGroupComponent({ data, selected }: NodeProps) {
         )}
         <span className="azure-group-title">{nodeData.name}</span>
         {!nodeData.isValid && (
-          <WarningFilled className="azure-group-warning" />
+          <WarningFilled
+            className="azure-group-warning"
+            title={nodeData.validationSummary || 'This resource has unresolved issues.'}
+          />
         )}
       </div>
       <Handle type="source" position={Position.Bottom} id="bottom" />

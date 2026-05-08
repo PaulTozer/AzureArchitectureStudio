@@ -16,6 +16,7 @@ import {
   SparkleRegular,
   SettingsRegular,
   DeleteRegular,
+  StopRegular,
 } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
 import {
@@ -82,6 +83,11 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
   const [configured, setConfigured] = useState(() => isOpenAIConfigured(loadOpenAISettings()));
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activityScrollRef = useRef<HTMLUListElement>(null);
+  // Outstanding fetch controller for the in-flight chat request, so the
+  // user can press Stop to abort a long-running build. Cleared in the
+  // `finally` of `send`.
+  const abortRef = useRef<AbortController | null>(null);
 
   // Re-check settings whenever the drawer opens (user may have just saved them)
   useEffect(() => {
@@ -91,6 +97,15 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, busy, activity.length]);
+
+  // Keep the live activity log pinned to the bottom as new rows arrive
+  // so the user can always see what the assistant is currently doing
+  // without manually scrolling inside the inner panel.
+  useEffect(() => {
+    const el = activityScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [activity]);
 
   const availableServices = useMemo(
     () => azureServices.map((s) => {
@@ -334,6 +349,21 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
           }
         }
 
+        // Collect every edge that will exist after this turn (existing
+        // ones plus any connect_nodes from this batch). The layout pass
+        // uses these to detect when touched top-level nodes form a tree
+        // (parent → children via edges, e.g. CAF management groups) and
+        // arranges them as a hierarchical tree instead of a flat row.
+        const edgePairs: Array<{ source: string; target: string }> = [];
+        for (const e of edges) edgePairs.push({ source: e.source, target: e.target });
+        for (const a of actions) {
+          if (a.type === 'connect_nodes') {
+            const s = translate(a.sourceId) ?? a.sourceId;
+            const t = translate(a.targetId) ?? a.targetId;
+            if (s && t) edgePairs.push({ source: s, target: t });
+          }
+        }
+
         // NSGs and route tables are decorations: re-parent them onto the
         // subnet (or VNet) they protect and pin them to the bottom-left
         // corner so they look the same as ARM Import. We discover the
@@ -394,7 +424,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
           return updated;
         });
 
-        next = autoLayoutDiagram(next, touched, prev);
+        next = autoLayoutDiagram(next, touched, prev, edgePairs);
 
         return next;
       });
@@ -448,11 +478,25 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
       setBusy(true);
       setActivity([]);
 
+      // Fresh abort controller for this request so a Stop click only
+      // affects the in-flight build, not future ones.
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       // Auto-incrementing id so React can key the activity rows
       // independently from their content.
       let nextId = 0;
       const pushActivity = (entry: Omit<ActivityEntry, 'id'>) =>
         setActivity((prev) => [...prev, { ...entry, id: nextId++ }]);
+
+      // id → friendly name lookup so connect_nodes activity can reference
+      // resources by name instead of opaque "ai-xxx" ids. Seeded with
+      // any existing nodes already on the canvas, then extended as the
+      // assistant adds new ones during this turn.
+      const nameById = new Map<string, string>();
+      for (const n of nodes) {
+        nameById.set(n.id, (n.data as AzureNodeData).name || n.id);
+      }
 
       try {
         const resp = await chatService.sendStream(
@@ -472,28 +516,77 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
           (evt: ChatProgressEvent) => {
             switch (evt.kind) {
               case 'thinking':
-                pushActivity({ tone: 'thinking', title: evt.title || 'Thinking…' });
+                // Suppressed — the outer "Working…" spinner already shows
+                // the assistant is busy. Per-round reasoning rows just
+                // add visual noise between the green-tick action rows.
                 break;
               case 'tool_call':
-                pushActivity({
-                  tone: evt.title?.toLowerCase().includes('microsoft learn') ? 'docs' : 'tool',
-                  title: evt.title || 'Calling tool…',
-                });
+                // Suppressed — the user only needs to see what was
+                // actually accomplished, not what's mid-flight. The
+                // matching `action` event (with its green tick) will
+                // land moments later for every successful tool call.
+                // Docs searches are the one exception worth surfacing,
+                // because they don't emit an `action` follow-up.
+                if (evt.title?.toLowerCase().includes('microsoft learn')) {
+                  pushActivity({ tone: 'docs', title: evt.title });
+                }
                 break;
               case 'tool_result':
-                // Truncate noisy tool results so the log stays readable.
-                pushActivity({
-                  tone: 'result',
-                  title: 'Result',
-                  detail: truncate(evt.detail, 200),
-                });
+                // Most tool results are mechanical confirmations ("ok",
+                // "Added node id=ai-…", "skipped: edge already exists",
+                // etc.) — the matching `action` event already gives the
+                // user a green-tick row with a friendly name. Only
+                // surface results that actually carry information the
+                // user can't see otherwise (errors, dependency hints,
+                // docs excerpts).
+                {
+                  let d = (evt.detail || '').trim();
+                  // Strip a leading "ok\n" — the server sometimes
+                  // prepends it before a dependency-warning message.
+                  if (/^ok\s*[\r\n]+/i.test(d)) d = d.replace(/^ok\s*[\r\n]+/i, '');
+                  const lower = d.toLowerCase();
+                  if (
+                    !d ||
+                    lower === 'ok' ||
+                    lower.startsWith('added node id=') ||
+                    lower.startsWith('skipped:') ||
+                    lower.startsWith('a node with typekey=') ||
+                    lower.startsWith('a virtual-network already exists') ||
+                    lower.startsWith('a resource-group named') ||
+                    lower.startsWith('unknown parentid') ||
+                    lower.startsWith('placeholder parentid') ||
+                    lower.startsWith('unknown typekey') ||
+                    lower.startsWith('missing typekey') ||
+                    lower.startsWith('missing sourceid')
+                  ) {
+                    break;
+                  }
+                  // For docs results show a short excerpt; for
+                  // dependency-warning results show the whole thing
+                  // (it's already short and actionable).
+                  pushActivity({
+                    tone: 'result',
+                    title: d.startsWith('Required dependencies still unsatisfied')
+                      ? 'Missing dependency'
+                      : 'Result',
+                    detail: truncate(d, 220),
+                  });
+                }
                 break;
               case 'action':
                 if (evt.action) {
-                  pushActivity({
-                    tone: 'action',
-                    title: describeAction(evt.action),
-                  });
+                  // Track new node names so subsequent connect_nodes
+                  // events can reference them by display name.
+                  if (evt.action.type === 'add_node' && evt.action.id) {
+                    nameById.set(
+                      evt.action.id,
+                      evt.action.name || evt.action.id,
+                    );
+                  }
+                  const title = describeAction(evt.action, nameById);
+                  if (title) {
+                    pushActivity({ tone: 'action', title });
+                  }
                 }
                 break;
               case 'assistant':
@@ -508,6 +601,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
                 break;
             }
           },
+          controller.signal,
         );
 
         if (!resp.success) {
@@ -535,17 +629,42 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
           }
         }
       } catch (err) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'error', content: err instanceof Error ? err.message : String(err) },
-        ]);
+        // A user-initiated Stop surfaces here as a DOMException with name
+        // "AbortError" — that's not an error to the user, it's the whole
+        // point. Drop in a friendly transcript entry instead and keep
+        // any partial work that already streamed onto the canvas.
+        const aborted =
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          controller.signal.aborted;
+        if (aborted) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: 'Stopped. The resources I\'d already placed are still on the canvas.',
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'error', content: err instanceof Error ? err.message : String(err) },
+          ]);
+        }
       } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
         setBusy(false);
         setActivity([]);
       }
     },
     [busy, messages, nodes, edges, availableServices, applyActions]
   );
+
+  /** Abort the in-flight chat request, if any. */
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -657,7 +776,7 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
                   <span>{activity.length === 0 ? 'Thinking…' : 'Working…'}</span>
                 </div>
                 {activity.length > 0 && (
-                  <ul className="chat-live-log">
+                  <ul className="chat-live-log" ref={activityScrollRef}>
                     {activity.map((a) => (
                       <li key={a.id} className={`chat-live-log-row chat-live-log-${a.tone}`}>
                         <span className="chat-live-log-title">{a.title}</span>
@@ -679,14 +798,25 @@ export default function ChatDrawer({ open, onClose, onOpenSettings }: ChatDrawer
               disabled={busy || !configured}
               rows={2}
             />
-            <Button
-              appearance="primary"
-              icon={<SendRegular />}
-              onClick={() => void send(input)}
-              disabled={busy || !configured || input.trim().length === 0}
-            >
-              Send
-            </Button>
+            {busy ? (
+              <Button
+                appearance="secondary"
+                icon={<StopRegular />}
+                onClick={stop}
+                title="Stop the AI mid-build. Anything already placed on the canvas is kept."
+              >
+                Stop
+              </Button>
+            ) : (
+              <Button
+                appearance="primary"
+                icon={<SendRegular />}
+                onClick={() => void send(input)}
+                disabled={!configured || input.trim().length === 0}
+              >
+                Send
+              </Button>
+            )}
           </div>
         </div>
       </DrawerBody>
@@ -721,6 +851,7 @@ function autoLayoutDiagram(
   nodes: AzureNode[],
   touched: Set<string>,
   previous: AzureNode[],
+  edgePairs: ReadonlyArray<{ source: string; target: string }> = [],
 ): AzureNode[] {
   if (nodes.length === 0) return nodes;
 
@@ -732,7 +863,13 @@ function autoLayoutDiagram(
     // top-level — otherwise they'd be unreachable from the recursive
     // measure() walk and stay stuck at (0,0). This guards against the
     // AI sending a parentId that hasn't been (or wasn't) created.
-    if (pid && !byId.has(pid)) pid = undefined;
+    //
+    // Exception: synthetic subnet ids (containing `__subnet__`) won't
+    // exist in the current snapshot — useSubnetSync materialises them
+    // on the next render cycle. Leave their children attached so React
+    // Flow renders them inside the subnet once the synthetic node
+    // appears, instead of stranding them at the canvas root.
+    if (pid && !byId.has(pid) && !pid.includes('__subnet__')) pid = undefined;
     const arr = childrenOf.get(pid) ?? [];
     arr.push(n);
     childrenOf.set(pid, arr);
@@ -853,7 +990,134 @@ function autoLayoutDiagram(
   let rowY = layoutOriginY;
   let rowMaxH = 0;
   const newAbsPos = new Map<string, { x: number; y: number }>();
+
+  // ---------- Tree layout for connected top-level subtrees ----------
+  // Detect when touched top-level nodes form a tree via edges (the CAF
+  // management-group hierarchy is the canonical case: every MG is a
+  // top-level leaf, connected to its children with connect_nodes).
+  // Lay each tree out level-by-level so parents sit above children and
+  // siblings share a row, instead of being tiled in a flat strip.
+  const touchedTopSet = touchedTopIds;
+  const topIdSet = new Set(topSizes.map((t) => t.id));
+  // Build adjacency restricted to the touched top-level set so an
+  // edge from a top-level node into a child of some group doesn't
+  // accidentally pull that child into the tree.
+  const childrenInTree = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+  for (const id of touchedTopSet) inDegree.set(id, 0);
+  for (const e of edgePairs) {
+    if (!touchedTopSet.has(e.source) || !touchedTopSet.has(e.target)) continue;
+    if (!topIdSet.has(e.source) || !topIdSet.has(e.target)) continue;
+    const arr = childrenInTree.get(e.source) ?? [];
+    if (!arr.includes(e.target)) arr.push(e.target);
+    childrenInTree.set(e.source, arr);
+    inDegree.set(e.target, (inDegree.get(e.target) ?? 0) + 1);
+  }
+
+  // Roots = touched top-level nodes that have outgoing tree edges OR
+  // are the target of zero in-tree edges. A pure isolated leaf (no
+  // edges in or out within the touched top set) is NOT treated as
+  // tree content — it falls through to the flat row tiling below.
+  const treeNodes = new Set<string>();
+  const roots: string[] = [];
+  for (const id of touchedTopSet) {
+    const hasChildren = (childrenInTree.get(id)?.length ?? 0) > 0;
+    const hasParent = (inDegree.get(id) ?? 0) > 0;
+    if (hasChildren || hasParent) treeNodes.add(id);
+    if (hasChildren && !hasParent) roots.push(id);
+  }
+
+  // BFS-assign a depth (level) to every tree node. Anything reachable
+  // from a root is part of the tree; if a node has incoming edges but
+  // no path from a root (cycle / orphan), promote it to its own root.
+  const depth = new Map<string, number>();
+  const queue: string[] = [];
+  for (const r of roots) { depth.set(r, 0); queue.push(r); }
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const d = depth.get(id)!;
+    for (const c of childrenInTree.get(id) ?? []) {
+      if (!depth.has(c)) {
+        depth.set(c, d + 1);
+        queue.push(c);
+      }
+    }
+  }
+  for (const id of treeNodes) {
+    if (!depth.has(id)) depth.set(id, 0); // orphan with parents only
+  }
+
+  // If we found a real tree (more than 1 connected node), lay it out
+  // top-down with siblings centred under their parents.
+  let treeBottomY = layoutOriginY;
+  let treeMaxRight = TOP_LEVEL_ORIGIN.x;
+  if (treeNodes.size > 1) {
+    // Group node ids by depth.
+    const byDepth = new Map<number, string[]>();
+    for (const [id, d] of depth) {
+      const arr = byDepth.get(d) ?? [];
+      arr.push(id);
+      byDepth.set(d, arr);
+    }
+    const maxDepth = Math.max(...byDepth.keys());
+    const SIBLING_GAP = 40;
+    const LEVEL_GAP = 90;
+
+    // First pass: compute each level's total width so we can centre.
+    const levelWidth = new Map<number, number>();
+    const levelMaxH = new Map<number, number>();
+    for (let d = 0; d <= maxDepth; d++) {
+      const ids = byDepth.get(d) ?? [];
+      let w = 0;
+      let h = 0;
+      for (const id of ids) {
+        const t = topSizes.find((ts) => ts.id === id);
+        if (!t) continue;
+        w += t.size.width;
+        if (t.size.height > h) h = t.size.height;
+      }
+      if (ids.length > 1) w += SIBLING_GAP * (ids.length - 1);
+      levelWidth.set(d, w);
+      levelMaxH.set(d, h);
+    }
+    const widestLevel = Math.max(...levelWidth.values());
+    const treeOriginX = TOP_LEVEL_ORIGIN.x;
+    let levelY = layoutOriginY;
+    for (let d = 0; d <= maxDepth; d++) {
+      const ids = byDepth.get(d) ?? [];
+      const lw = levelWidth.get(d) ?? 0;
+      // Centre this level under the widest level so the tree looks balanced.
+      let cursorX = treeOriginX + Math.max(0, (widestLevel - lw) / 2);
+      // Sort siblings by their parent's previously assigned x so child
+      // groups stay near their parents instead of being randomly
+      // permuted between layout passes.
+      const sortedIds = [...ids].sort((a, b) => {
+        const pa = newAbsPos.get(findParent(a, childrenInTree))?.x ?? 0;
+        const pb = newAbsPos.get(findParent(b, childrenInTree))?.x ?? 0;
+        return pa - pb;
+      });
+      for (const id of sortedIds) {
+        const t = topSizes.find((ts) => ts.id === id);
+        if (!t) continue;
+        newAbsPos.set(id, { x: cursorX, y: levelY });
+        cursorX += t.size.width + SIBLING_GAP;
+        if (cursorX > treeMaxRight) treeMaxRight = cursorX;
+      }
+      levelY += (levelMaxH.get(d) ?? LEAF_H) + LEVEL_GAP;
+    }
+    treeBottomY = levelY;
+  }
+
+  // Continue flat-row tiling for everything else: untouched preserved,
+  // touched-but-not-in-tree appended below the tree (or at layoutOriginY
+  // if there was no tree).
+  rowY = treeNodes.size > 1 ? treeBottomY : layoutOriginY;
+  // Continue flat-row tiling for everything else: untouched preserved,
+  // touched-but-not-in-tree appended below the tree (or at layoutOriginY
+  // if there was no tree).
+  rowY = treeNodes.size > 1 ? treeBottomY : layoutOriginY;
   for (const t of topSizes) {
+    if (newAbsPos.has(t.id)) continue; // already placed by tree pass
     if (!touchedTopIds.has(t.id)) {
       const prevNode = previous.find((p) => p.id === t.id) ?? t.node;
       newAbsPos.set(t.id, prevNode.position);
@@ -870,7 +1134,21 @@ function autoLayoutDiagram(
   }
 
   return nodes.map((n) => {
-    const pid = (n as { parentId?: string }).parentId;
+    let pid = (n as { parentId?: string }).parentId;
+    // Mirror the orphan-reclassification we did up top: if this node's
+    // parentId points at a node that doesn't exist in the snapshot,
+    // treat it as top-level for positioning AND drop the dangling
+    // parentId so React Flow doesn't try to render it inside a
+    // non-existent group (which silently anchors it at 0,0).
+    //
+    // Exception (same as above): synthetic subnet ids will be created
+    // by useSubnetSync on the next render — keep the parentId so the
+    // child snaps into place once the synthetic subnet exists.
+    let parentIdOverride: string | null | undefined;
+    if (pid && !byId.has(pid) && !pid.includes('__subnet__')) {
+      parentIdOverride = undefined;
+      pid = undefined;
+    }
     let position = n.position;
     let style = n.style;
 
@@ -887,6 +1165,16 @@ function autoLayoutDiagram(
       if (sz) style = { ...style, width: sz.width, height: sz.height };
     }
 
+    if (parentIdOverride !== undefined) {
+      // Strip the dangling parentId. React Flow uses `parentId` as the
+      // anchoring key, so leaving a bogus one keeps the node clamped
+      // inside its (missing) parent's coordinate space at 0,0.
+      const { parentId: _drop, extent: _e, ...rest } = n as AzureNode & {
+        parentId?: string;
+        extent?: 'parent';
+      };
+      return { ...rest, position, style } as AzureNode;
+    }
     return { ...n, position, style };
   });
 }
@@ -903,6 +1191,22 @@ function subtreeIncludesTouched(
   return false;
 }
 
+/**
+ * Reverse-lookup: find the parent of `id` in the tree-edge map. The map
+ * is parent → children, so we walk every entry until we find one that
+ * lists `id`. Used to keep siblings sorted near their parents during
+ * tree layout. Returns undefined for roots.
+ */
+function findParent(
+  id: string,
+  childrenInTree: Map<string, string[]>,
+): string | undefined {
+  for (const [parent, kids] of childrenInTree) {
+    if (kids.includes(id)) return parent;
+  }
+  return undefined;
+}
+
 function summariseActions(actions: DiagramAction[]): string | undefined {
   if (actions.length === 0) return undefined;
   const counts: Record<string, number> = {};
@@ -915,23 +1219,103 @@ function summariseActions(actions: DiagramAction[]): string | undefined {
   return parts.length ? `Diagram updated: ${parts.join(', ')}` : undefined;
 }
 
-/** One-line description of a single diagram action for the activity log. */
-function describeAction(a: DiagramAction): string {
+/**
+ * One-line, user-friendly description of a single diagram action for
+ * the live activity log. Returns null when the action would just
+ * duplicate the preceding "Adding…" / "Connecting…" tool_call row that
+ * the server already surfaced.
+ */
+function describeAction(
+  a: DiagramAction,
+  nameById: Map<string, string>,
+): string | null {
   switch (a.type) {
     case 'add_node': {
-      const name = a.name || a.id || 'node';
-      const t = (a.typeKey || '').replace(/-/g, ' ').replace(/s$/, '');
-      return t ? `Added ${t} '${name}'` : `Added '${name}'`;
+      const name = a.name || nameById.get(a.id || '') || 'resource';
+      const t = friendlyTypeLabel(a.typeKey);
+      return t ? `✓ Added ${t} '${name}'` : `✓ Added '${name}'`;
     }
-    case 'connect_nodes':
-      return `Connected ${a.sourceId} → ${a.targetId}`;
-    case 'remove_node':
-      return `Removed ${a.id}`;
+    case 'connect_nodes': {
+      const src = nameById.get(a.sourceId || '') || 'resource';
+      const tgt = nameById.get(a.targetId || '') || 'resource';
+      return `✓ Connected ${src} → ${tgt}`;
+    }
+    case 'remove_node': {
+      const name = nameById.get(a.id || '') || a.id || 'resource';
+      return `✓ Removed ${name}`;
+    }
     case 'clear_diagram':
-      return 'Cleared the canvas';
+      return '✓ Cleared the canvas';
     default:
-      return 'Updated diagram';
+      return null;
   }
+}
+
+/**
+ * Convert a raw resource typeKey (e.g. "private-endpoints") into a
+ * readable display label ("Private Endpoint"). Falls back to a sensible
+ * Title-Cased version when the type isn't in the curated map.
+ */
+function friendlyTypeLabel(typeKey: string | undefined): string {
+  if (!typeKey) return '';
+  const map: Record<string, string> = {
+    'resource-group': 'Resource Group',
+    'virtual-networks': 'Virtual Network',
+    'virtual-network': 'Virtual Network',
+    'subnet': 'Subnet',
+    'subnets': 'Subnet',
+    'private-endpoints': 'Private Endpoint',
+    'private-endpoint': 'Private Endpoint',
+    'private-dns-zones': 'Private DNS Zone',
+    'private-dns-zone': 'Private DNS Zone',
+    'network-security-groups': 'Network Security Group',
+    'network-security-group': 'Network Security Group',
+    'route-tables': 'Route Table',
+    'route-table': 'Route Table',
+    'public-ip': 'Public IP',
+    'public-ips': 'Public IP',
+    'network-interface': 'Network Interface',
+    'network-interfaces': 'Network Interface',
+    'managed-disk': 'Managed Disk',
+    'managed-disks': 'Managed Disk',
+    'virtual-machine': 'Virtual Machine',
+    'virtual-machines': 'Virtual Machine',
+    'azure-firewall': 'Azure Firewall',
+    'firewalls': 'Azure Firewall',
+    'bastions': 'Azure Bastion',
+    'azure-bastions': 'Azure Bastion',
+    'application-gateways': 'Application Gateway',
+    'app-gateway': 'Application Gateway',
+    'load-balancer': 'Load Balancer',
+    'load-balancers': 'Load Balancer',
+    'kubernetes-services': 'AKS Cluster',
+    'web-app': 'Web App',
+    'function-app': 'Function App',
+    'appservice-plan': 'App Service Plan',
+    'sql-server': 'SQL Server',
+    'sql-database': 'SQL Database',
+    'storage-account': 'Storage Account',
+    'storage-accounts': 'Storage Account',
+    'key-vault': 'Key Vault',
+    'cosmos-db-account': 'Cosmos DB Account',
+    'cosmos-db-database': 'Cosmos DB Database',
+    'log-analytics-workspace': 'Log Analytics Workspace',
+    'application-insights': 'Application Insights',
+    'container-registry': 'Container Registry',
+    'container-registries': 'Container Registry',
+    'management-groups': 'Management Group',
+    'subscriptions': 'Subscription',
+    'vpn-gateway': 'VPN Gateway',
+    'expressroute-gateway': 'ExpressRoute Gateway',
+  };
+  if (map[typeKey]) return map[typeKey];
+  // Fallback: strip trailing 's', replace dashes, Title Case.
+  return typeKey
+    .replace(/s$/, '')
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 function truncate(s: string | undefined, n: number): string | undefined {

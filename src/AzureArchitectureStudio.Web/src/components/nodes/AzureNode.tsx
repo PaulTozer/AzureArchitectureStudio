@@ -25,7 +25,10 @@ function AzureNodeComponent({ data, selected }: NodeProps) {
       />
       {!isPinned && <div className="azure-node-label">{nodeData.name}</div>}
       {!nodeData.isValid && (
-        <WarningFilled className="azure-node-warning" />
+        <WarningFilled
+          className="azure-node-warning"
+          title={nodeData.validationSummary || 'This resource has unresolved issues.'}
+        />
       )}
       <Handle type="source" position={Position.Bottom} id="bottom" />
       <Handle type="source" position={Position.Right} id="right" />

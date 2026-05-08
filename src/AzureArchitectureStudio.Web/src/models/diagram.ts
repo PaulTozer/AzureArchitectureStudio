@@ -23,6 +23,9 @@ export interface AzureNodeData extends Record<string, unknown> {
   location: string;
   useResourceGroupLocation: boolean;
   isValid: boolean;
+  /** Short, human-readable summary of why `isValid` is false (e.g. "Missing
+   *  required values: Administrator Password"). Empty when the node is valid. */
+  validationSummary?: string;
   // Resource-specific properties stored as a generic bag
   properties: Record<string, unknown>;
   /** When set, this node is anchored to a corner of its parent group */

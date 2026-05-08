@@ -21,6 +21,7 @@ import type { AzureNode, AzureNodeData } from '../../models';
 import { getResourceType, getResourceTypeAsync, getDisplayName } from '../../models';
 import type { ResourceTypeDefinition } from '../../models';
 import { evaluateDependencies } from '../../hooks/useDependencies';
+import { evaluateRequiredProperties } from '../../hooks/useRequiredProperties';
 import { parseSubnetNodeId } from '../../hooks/useSubnetSync';
 import { regionOptions } from '../../models/azure-regions';
 import { resolveKey } from '../../models/resource-registry';
@@ -238,21 +239,43 @@ export default function NodeEditDrawer({
             </span>
           </div>
         ) : resourceDef && resourceDef.propertySchema.length > 0 ? (
-          <SchemaForm
-            schema={resourceDef.propertySchema}
-            properties={
-              subnetRef
-                ? { ...data.properties, addressPrefix: displayAddressPrefix }
-                : data.properties
-            }
-            nodeId={node.id}
-            onChange={handlePropertyChange}
-            onMultiChange={(updates) => {
-              updateNodeData(node.id, {
-                properties: { ...data.properties, ...updates },
-              });
-            }}
-          />
+          <>
+            {(() => {
+              const missing = evaluateRequiredProperties(node);
+              if (missing.length === 0) return null;
+              return (
+                <MessageBar intent="warning" icon={<WarningRegular />} style={{ marginTop: 12 }}>
+                  <MessageBarBody>
+                    <MessageBarTitle>
+                      {missing.length === 1
+                        ? 'Missing required value'
+                        : `Missing ${missing.length} required values`}
+                    </MessageBarTitle>
+                    {missing.map((m) => (
+                      <div key={m.key} style={{ fontSize: 12 }}>
+                        • {m.label}
+                      </div>
+                    ))}
+                  </MessageBarBody>
+                </MessageBar>
+              );
+            })()}
+            <SchemaForm
+              schema={resourceDef.propertySchema}
+              properties={
+                subnetRef
+                  ? { ...data.properties, addressPrefix: displayAddressPrefix }
+                  : data.properties
+              }
+              nodeId={node.id}
+              onChange={handlePropertyChange}
+              onMultiChange={(updates) => {
+                updateNodeData(node.id, {
+                  properties: { ...data.properties, ...updates },
+                });
+              }}
+            />
+          </>
         ) : (
           <p style={{ marginTop: 12, color: 'var(--colorNeutralForeground3)', fontSize: 12 }}>
             No configurable properties available for this resource type.
