@@ -20,7 +20,7 @@ The front-end has been rebuilt from Blazor WebAssembly to a modern **React + Typ
 
 ### Canvas With AI Assistant
 
-![Azure Architecture Studio canvas with AI Assistant](assets/Screenshot%202026-06-23%20172601.png)
+![Azure Architecture Studio canvas with AI Assistant](assets/Screenshot%202026-06-23%20172335.png)
 
 ### SQL Server Configuration Panel
 
@@ -28,7 +28,7 @@ The front-end has been rebuilt from Blazor WebAssembly to a modern **React + Typ
 
 ### Import From Azure Dialog
 
-![Import from Azure dialog](assets/Screenshot%202026-06-23%20172335.png)
+![Import from Azure dialog](assets/Screenshot%202026-06-23%20172601.png)
 
 ## What's new
 
