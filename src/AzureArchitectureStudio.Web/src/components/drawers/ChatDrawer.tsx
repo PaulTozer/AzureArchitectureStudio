@@ -1092,8 +1092,8 @@ function autoLayoutDiagram(
       // groups stay near their parents instead of being randomly
       // permuted between layout passes.
       const sortedIds = [...ids].sort((a, b) => {
-        const pa = newAbsPos.get(findParent(a, childrenInTree))?.x ?? 0;
-        const pb = newAbsPos.get(findParent(b, childrenInTree))?.x ?? 0;
+        const pa = newAbsPos.get(findParent(a, childrenInTree) ?? '')?.x ?? 0;
+        const pb = newAbsPos.get(findParent(b, childrenInTree) ?? '')?.x ?? 0;
         return pa - pb;
       });
       for (const id of sortedIds) {

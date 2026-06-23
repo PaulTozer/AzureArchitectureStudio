@@ -762,6 +762,18 @@
     "iconPath": "assets/azure-icons/databases/10131-icon-service-Azure-Database-PostgreSQL-Server.svg"
   },
   {
+    "key": "azure-database-for-postgresql-flexible-servers",
+    "name": "Azure Database for PostgreSQL Flexible Servers",
+    "category": "Databases",
+    "iconPath": "assets/azure-icons/databases/10131-icon-service-Azure-Database-PostgreSQL-Server.svg"
+  },
+  {
+    "key": "azure-database-for-mysql-flexible-servers",
+    "name": "Azure Database for MySQL Flexible Servers",
+    "category": "Databases",
+    "iconPath": "assets/azure-icons/databases/10122-icon-service-Azure-Database-MySQL-Server.svg"
+  },
+  {
     "key": "azure-database-postgresql-server-group",
     "name": "Azure Database PostgreSQL Server Group",
     "category": "Databases",
@@ -1620,6 +1632,12 @@
     "iconPath": "assets/azure-icons/identity/10225-icon-service-Enterprise-Applications.svg"
   },
   {
+    "key": "entra-tenant",
+    "name": "Microsoft Entra Tenant",
+    "category": "Identity",
+    "iconPath": "assets/azure-icons/identity/02854-icon-service-Entra-Connect.svg"
+  },
+  {
     "key": "entra-connect",
     "name": "Entra Connect",
     "category": "Identity",
@@ -1942,6 +1960,18 @@
     "name": "System Topic",
     "category": "Integration",
     "iconPath": "assets/azure-icons/integration/02073-icon-service-System-Topic.svg"
+  },
+  {
+    "key": "private-dns-zones",
+    "name": "Private DNS Zones",
+    "category": "Networking",
+    "iconPath": "assets/azure-icons/networking/10064-icon-service-DNS-Zones.svg"
+  },
+  {
+    "key": "private-dns-zone-vnet-link",
+    "name": "Private DNS Zone VNet Link",
+    "category": "Networking",
+    "iconPath": "assets/azure-icons/networking/10061-icon-service-Virtual-Networks.svg"
   },
   {
     "key": "client-apps",
@@ -3394,6 +3424,12 @@
     "name": "Container Apps Environments",
     "category": "Other",
     "iconPath": "assets/azure-icons/other/02989-icon-service-Container-Apps-Environments.svg"
+  },
+  {
+    "key": "container-apps",
+    "name": "Container App",
+    "category": "Containers",
+    "iconPath": "assets/azure-icons/other/02884-icon-service-Worker-Container-App.svg"
   },
   {
     "key": "cost-export",

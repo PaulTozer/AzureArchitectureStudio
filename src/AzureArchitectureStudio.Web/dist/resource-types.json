@@ -1,15 +1,141 @@
 [
   {
+    "key": "entra-tenant",
+    "displayName": "Microsoft Entra Tenant",
+    "armType": "Microsoft.AzureActiveDirectory/tenants",
+    "apiVersion": "2023-05-17",
+    "propertySchema": [
+      {
+        "key": "tenantId",
+        "label": "Tenant ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Contoso"
+      },
+      {
+        "key": "primaryDomain",
+        "label": "Primary Domain",
+        "type": "string",
+        "placeholder": "contoso.onmicrosoft.com"
+      }
+    ],
+    "armMapping": {}
+  },
+  {
+    "key": "management-groups",
+    "displayName": "Management Group",
+    "armType": "Microsoft.Management/managementGroups",
+    "apiVersion": "2023-04-01",
+    "propertySchema": [
+      {
+        "key": "id",
+        "label": "Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "id": "id",
+          "name": "name",
+          "displayName": "properties.displayName"
+        },
+        "placeholder": "Pick a management group from your tenant"
+      },
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Contoso Platform"
+      },
+      {
+        "key": "parentManagementGroupId",
+        "label": "Parent Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "parentManagementGroupId": "id"
+        },
+        "placeholder": "Pick the parent management group"
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "displayName": "properties.displayName",
+        "parentManagementGroupId": "properties.details.parent.id"
+      }
+    }
+  },
+  {
+    "key": "subscriptions",
+    "displayName": "Subscription",
+    "armType": "Microsoft.Resources/subscriptions",
+    "apiVersion": "2022-12-01",
+    "isGroup": true,
+    "groupStyle": {
+      "width": 900,
+      "height": 650
+    },
+    "propertySchema": [
+      {
+        "key": "subscriptionId",
+        "label": "Subscription",
+        "type": "azure-picker",
+        "azureSource": "subscription",
+        "azureFieldMap": {
+          "subscriptionId": "subscriptionId",
+          "displayName": "displayName",
+          "tenantId": "tenantId"
+        },
+        "placeholder": "Pick a subscription from your tenant"
+      },
+      {
+        "key": "displayName",
+        "label": "Display Name",
+        "type": "string",
+        "placeholder": "Landing Zone A2"
+      },
+      {
+        "key": "tenantId",
+        "label": "Tenant ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "managementGroupId",
+        "label": "Parent Management Group",
+        "type": "azure-picker",
+        "azureSource": "managementGroup",
+        "azureFieldMap": {
+          "managementGroupId": "id"
+        },
+        "placeholder": "Pick the parent management group"
+      }
+    ],
+    "armMapping": {},
+    "groupVariant": "subscription"
+  },
+  {
     "key": "resource-group",
     "displayName": "Resource Group",
     "armType": "Microsoft.Resources/resourceGroups",
     "apiVersion": "2023-07-01",
     "isGroup": true,
     "groupStyle": {
-      "width": 300,
-      "height": 250
+      "width": 700,
+      "height": 500
     },
     "propertySchema": [
+      {
+        "key": "location",
+        "label": "Region",
+        "type": "select",
+        "required": true,
+        "defaultValue": "eastus",
+        "optionsSource": "azureRegions"
+      },
       {
         "key": "tags",
         "label": "Tags (key=value, one per line)",
@@ -17,7 +143,11 @@
         "placeholder": "environment=production"
       }
     ],
-    "armMapping": {},
+    "armMapping": {
+      "propertyMappings": {
+        "location": "location"
+      }
+    },
     "groupVariant": "resource-group"
   },
   {
@@ -159,51 +289,9 @@
       {
         "key": "vmSize",
         "label": "VM Size",
-        "type": "select",
+        "type": "vm-size-picker",
         "defaultValue": "Standard_B2s",
-        "required": true,
-        "options": [
-          {
-            "label": "Standard B1s (1 vCPU, 1 GiB)",
-            "value": "Standard_B1s"
-          },
-          {
-            "label": "Standard B2s (2 vCPU, 4 GiB)",
-            "value": "Standard_B2s"
-          },
-          {
-            "label": "Standard B2ms (2 vCPU, 8 GiB)",
-            "value": "Standard_B2ms"
-          },
-          {
-            "label": "Standard D2s v5 (2 vCPU, 8 GiB)",
-            "value": "Standard_D2s_v5"
-          },
-          {
-            "label": "Standard D4s v5 (4 vCPU, 16 GiB)",
-            "value": "Standard_D4s_v5"
-          },
-          {
-            "label": "Standard D8s v5 (8 vCPU, 32 GiB)",
-            "value": "Standard_D8s_v5"
-          },
-          {
-            "label": "Standard E2s v5 (2 vCPU, 16 GiB)",
-            "value": "Standard_E2s_v5"
-          },
-          {
-            "label": "Standard E4s v5 (4 vCPU, 32 GiB)",
-            "value": "Standard_E4s_v5"
-          },
-          {
-            "label": "Standard F2s v2 (2 vCPU, 4 GiB)",
-            "value": "Standard_F2s_v2"
-          },
-          {
-            "label": "Standard F4s v2 (4 vCPU, 8 GiB)",
-            "value": "Standard_F4s_v2"
-          }
-        ]
+        "required": true
       },
       {
         "key": "osType",
@@ -224,44 +312,8 @@
       {
         "key": "imagePublisher",
         "label": "Image Publisher",
-        "type": "select",
-        "defaultValue": "Canonical",
-        "options": [
-          {
-            "label": "Canonical (Ubuntu)",
-            "value": "Canonical"
-          },
-          {
-            "label": "RedHat",
-            "value": "RedHat"
-          },
-          {
-            "label": "MicrosoftWindowsServer",
-            "value": "MicrosoftWindowsServer"
-          },
-          {
-            "label": "Debian",
-            "value": "Debian"
-          },
-          {
-            "label": "SUSE",
-            "value": "SUSE"
-          }
-        ]
-      },
-      {
-        "key": "imageOffer",
-        "label": "Image Offer",
-        "type": "string",
-        "defaultValue": "0001-com-ubuntu-server-jammy",
-        "placeholder": "e.g. 0001-com-ubuntu-server-jammy"
-      },
-      {
-        "key": "imageSku",
-        "label": "Image SKU",
-        "type": "string",
-        "defaultValue": "22_04-lts-gen2",
-        "placeholder": "e.g. 22_04-lts-gen2"
+        "type": "vm-image-picker",
+        "defaultValue": "Canonical"
       },
       {
         "key": "adminUsername",
@@ -331,26 +383,8 @@
       {
         "key": "availabilityZone",
         "label": "Availability Zone",
-        "type": "select",
-        "defaultValue": "",
-        "options": [
-          {
-            "label": "No zone",
-            "value": ""
-          },
-          {
-            "label": "Zone 1",
-            "value": "1"
-          },
-          {
-            "label": "Zone 2",
-            "value": "2"
-          },
-          {
-            "label": "Zone 3",
-            "value": "3"
-          }
-        ]
+        "type": "availability-zone-picker",
+        "defaultValue": ""
       },
       {
         "key": "enableBootDiagnostics",
@@ -390,9 +424,112 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
+        "acceptVia": ["network-interface", "network-interfaces"],
         "hint": "Place the VM inside a subnet, or attach a NIC."
       }
     ]
+  },
+  {
+    "key": "managed-disk",
+    "displayName": "Managed Disk",
+    "armType": "Microsoft.Compute/disks",
+    "apiVersion": "2024-03-01",
+    "propertySchema": [
+      {
+        "key": "skuName",
+        "label": "Performance Tier (SKU)",
+        "type": "disk-sku-picker",
+        "defaultValue": "Premium_LRS",
+        "required": true
+      },
+      {
+        "key": "diskSizeGb",
+        "label": "Size (GiB)",
+        "type": "number",
+        "defaultValue": 128,
+        "required": true,
+        "placeholder": "e.g. 128, 256, 512, 1024"
+      },
+      {
+        "key": "createOption",
+        "label": "Create Option",
+        "type": "select",
+        "defaultValue": "Empty",
+        "options": [
+          { "label": "Empty (new blank disk)", "value": "Empty" },
+          { "label": "From snapshot", "value": "Copy" },
+          { "label": "From image", "value": "FromImage" },
+          { "label": "From storage blob", "value": "Import" },
+          { "label": "Restore from backup", "value": "Restore" }
+        ]
+      },
+      {
+        "key": "diskIopsReadWrite",
+        "label": "Provisioned IOPS",
+        "type": "number",
+        "defaultValue": 3000,
+        "placeholder": "Premium v2 / Ultra only",
+        "visibleWhen": { "field": "skuName", "value": ["PremiumV2_LRS", "UltraSSD_LRS"] }
+      },
+      {
+        "key": "diskMBpsReadWrite",
+        "label": "Provisioned Throughput (MB/s)",
+        "type": "number",
+        "defaultValue": 125,
+        "placeholder": "Premium v2 / Ultra only",
+        "visibleWhen": { "field": "skuName", "value": ["PremiumV2_LRS", "UltraSSD_LRS"] }
+      },
+      {
+        "key": "burstingEnabled",
+        "label": "On-demand Bursting",
+        "type": "boolean",
+        "defaultValue": false,
+        "visibleWhen": { "field": "skuName", "value": ["Premium_LRS", "Premium_ZRS"] }
+      },
+      {
+        "key": "networkAccessPolicy",
+        "label": "Network Access",
+        "type": "select",
+        "defaultValue": "AllowAll",
+        "options": [
+          { "label": "Allow public access from all networks", "value": "AllowAll" },
+          { "label": "Allow only via private endpoints", "value": "AllowPrivate" },
+          { "label": "Deny all", "value": "DenyAll" }
+        ]
+      },
+      {
+        "key": "publicNetworkAccess",
+        "label": "Public Network Access",
+        "type": "radio",
+        "defaultValue": "Enabled",
+        "options": [
+          { "label": "Enabled", "value": "Enabled" },
+          { "label": "Disabled", "value": "Disabled" }
+        ]
+      },
+      {
+        "key": "availabilityZone",
+        "label": "Availability Zone",
+        "type": "availability-zone-picker",
+        "defaultValue": "",
+        "visibleWhen": {
+          "field": "skuName",
+          "value": ["Standard_LRS", "StandardSSD_LRS", "Premium_LRS", "PremiumV2_LRS", "UltraSSD_LRS"]
+        }
+      }
+    ],
+    "armMapping": {
+      "propertyMappings": {
+        "skuName": "sku.name",
+        "diskSizeGb": "properties.diskSizeGB",
+        "createOption": "properties.creationData.createOption",
+        "diskIopsReadWrite": "properties.diskIOPSReadWrite",
+        "diskMBpsReadWrite": "properties.diskMBpsReadWrite",
+        "burstingEnabled": "properties.burstingEnabled",
+        "networkAccessPolicy": "properties.networkAccessPolicy",
+        "publicNetworkAccess": "properties.publicNetworkAccess"
+      }
+    }
   },
   {
     "key": "storage-account",
@@ -593,7 +730,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "Firewall must live in an AzureFirewallSubnet."
+        "requiredName": ["AzureFirewallSubnet", "AzureFirewallManagementSubnet"],
+        "hint": "Firewall must live in a subnet named exactly 'AzureFirewallSubnet'."
       },
       {
         "key": "publicIpRef",
@@ -616,7 +754,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "Place this Bastion inside an AzureBastionSubnet."
+        "requiredName": "AzureBastionSubnet",
+        "hint": "Place this Bastion inside a subnet named exactly 'AzureBastionSubnet'."
       },
       {
         "key": "publicIpRef",
@@ -939,6 +1078,15 @@
         "required": true
       },
       {
+        "key": "version",
+        "label": "Server Version",
+        "type": "select",
+        "defaultValue": "12.0",
+        "options": [
+          { "label": "12.0", "value": "12.0" }
+        ]
+      },
+      {
         "key": "minimalTlsVersion",
         "label": "Minimum TLS Version",
         "type": "select",
@@ -975,18 +1123,92 @@
         ]
       },
       {
+        "key": "restrictOutboundNetworkAccess",
+        "label": "Restrict Outbound Network Access",
+        "type": "radio",
+        "defaultValue": "Disabled",
+        "options": [
+          { "label": "Enabled", "value": "Enabled" },
+          { "label": "Disabled", "value": "Disabled" }
+        ]
+      },
+      {
         "key": "enableAadAuth",
         "label": "Microsoft Entra ID Authentication",
         "type": "boolean",
         "defaultValue": false
+      },
+      {
+        "key": "aadAdminLogin",
+        "label": "Entra ID Admin Login",
+        "type": "string",
+        "placeholder": "sqladmins@contoso.com"
+      },
+      {
+        "key": "aadAdminObjectId",
+        "label": "Entra ID Admin Object ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "aadOnlyAuthentication",
+        "label": "Entra ID Authentication Only (disable SQL auth)",
+        "type": "boolean",
+        "defaultValue": false
+      },
+      {
+        "key": "identityType",
+        "label": "Managed Identity",
+        "type": "select",
+        "defaultValue": "None",
+        "options": [
+          { "label": "None", "value": "None" },
+          { "label": "System assigned", "value": "SystemAssigned" },
+          { "label": "User assigned", "value": "UserAssigned" },
+          { "label": "System + User assigned", "value": "SystemAssigned,UserAssigned" }
+        ]
+      },
+      {
+        "key": "primaryUserAssignedIdentityId",
+        "label": "Primary User-Assigned Identity (resourceId)",
+        "type": "string",
+        "placeholder": "/subscriptions/.../userAssignedIdentities/<name>"
+      },
+      {
+        "key": "keyId",
+        "label": "TDE Customer-Managed Key URI",
+        "type": "string",
+        "placeholder": "https://<vault>.vault.azure.net/keys/<key>/<version>"
+      },
+      {
+        "key": "federatedClientId",
+        "label": "Federated Client ID (cross-tenant CMK)",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "key": "administratorsTenantId",
+        "label": "Entra ID Admin Tenant ID",
+        "type": "string",
+        "placeholder": "00000000-0000-0000-0000-000000000000"
       }
     ],
     "armMapping": {
       "propertyMappings": {
         "adminLogin": "properties.administratorLogin",
         "adminPassword": "properties.administratorLoginPassword",
+        "version": "properties.version",
         "minimalTlsVersion": "properties.minimalTlsVersion",
-        "publicNetworkAccess": "properties.publicNetworkAccess"
+        "publicNetworkAccess": "properties.publicNetworkAccess",
+        "restrictOutboundNetworkAccess": "properties.restrictOutboundNetworkAccess",
+        "aadAdminLogin": "properties.administrators.login",
+        "aadAdminObjectId": "properties.administrators.sid",
+        "administratorsTenantId": "properties.administrators.tenantId",
+        "aadOnlyAuthentication": "properties.administrators.azureADOnlyAuthentication",
+        "identityType": "identity.type",
+        "primaryUserAssignedIdentityId": "properties.primaryUserAssignedIdentityId",
+        "keyId": "properties.keyId",
+        "federatedClientId": "properties.federatedClientId"
       },
       "parameters": [
         {
@@ -2918,7 +3140,8 @@
         "targetType": "subnet",
         "required": true,
         "autoFromParent": true,
-        "hint": "VPN Gateway requires a GatewaySubnet."
+        "requiredName": "GatewaySubnet",
+        "hint": "VPN Gateway must live in a subnet named exactly 'GatewaySubnet'."
       },
       {
         "key": "publicIpRef",
@@ -2926,6 +3149,42 @@
         "targetType": "public-ip",
         "required": true,
         "hint": "Connect a Public IP via an edge."
+      }
+    ]
+  },
+  {
+    "key": "container-apps-environments",
+    "displayName": "Container Apps Environment",
+    "armType": "Microsoft.App/managedEnvironments",
+    "apiVersion": "2023-05-01",
+    "propertySchema": [
+      {
+        "key": "zoneRedundant",
+        "label": "Zone Redundant",
+        "type": "boolean",
+        "defaultValue": false
+      },
+      {
+        "key": "internalLoadBalancerEnabled",
+        "label": "Internal Only",
+        "type": "boolean",
+        "defaultValue": false
+      }
+    ],
+    "dependencies": [
+      {
+        "key": "logsRef",
+        "label": "Log Analytics workspace",
+        "targetType": "log-analytics",
+        "required": true,
+        "hint": "Environment needs a Log Analytics workspace for diagnostics."
+      },
+      {
+        "key": "subnetRef",
+        "label": "Subnet (VNet integration)",
+        "targetType": "subnet",
+        "required": false,
+        "hint": "Required only for VNet-integrated environments."
       }
     ]
   },
@@ -3063,19 +3322,11 @@
     },
     "dependencies": [
       {
-        "key": "subnetRef",
-        "label": "Subnet (Container Apps environment)",
-        "targetType": "subnet",
-        "required": false,
-        "autoFromParent": true,
-        "hint": "Required for VNet-integrated environments."
-      },
-      {
-        "key": "logsRef",
-        "label": "Log Analytics workspace",
-        "targetType": "log-analytics",
+        "key": "environmentRef",
+        "label": "Container Apps Environment",
+        "targetType": "container-apps-environments",
         "required": true,
-        "hint": "Container Apps environment needs a Log Analytics workspace."
+        "hint": "Container App must run inside an environment."
       },
       {
         "key": "registryRef",

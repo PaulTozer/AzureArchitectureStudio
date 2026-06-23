@@ -16,6 +16,20 @@ Azure Architecture Studio builds on the foundation of [Azure Design Studio](http
 
 The front-end has been rebuilt from Blazor WebAssembly to a modern **React + TypeScript** SPA powered by **@xyflow/react** for the diagram canvas, while retaining the existing **ASP.NET Core (.NET 10)** server for IaC generation, deployment, and AI-assisted services.
 
+## Screenshots
+
+### Canvas With AI Assistant
+
+![Azure Architecture Studio canvas with AI Assistant](assets/Screenshot%202026-06-23%20172601.png)
+
+### SQL Server Configuration Panel
+
+![SQL Server configuration panel](assets/Screenshot%202026-06-23%20172502.png)
+
+### Import From Azure Dialog
+
+![Import from Azure dialog](assets/Screenshot%202026-06-23%20172335.png)
+
 ## What's new
 
 - **React 19 + TypeScript 5 + Vite 6** front-end replacing the previous Blazor WASM client.
