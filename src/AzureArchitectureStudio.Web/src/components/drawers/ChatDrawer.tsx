@@ -847,13 +847,41 @@ interface LayoutSize { width: number; height: number }
  * nodes keep their existing absolute position so user-arranged content is
  * not disturbed.
  */
-function autoLayoutDiagram(
+export function autoLayoutDiagram(
   nodes: AzureNode[],
   touched: Set<string>,
   previous: AzureNode[],
   edgePairs: ReadonlyArray<{ source: string; target: string }> = [],
 ): AzureNode[] {
   if (nodes.length === 0) return nodes;
+
+  const existingIds = new Set(nodes.map((node) => node.id));
+  nodes = nodes.flatMap((node) => {
+    const data = node.data as AzureNodeData;
+    if (data.typeKey !== 'virtual-network' && data.typeKey !== 'virtual-networks') return [node];
+    const subnets = (data.properties?.subnets as Array<{ name: string; addressPrefix?: string }> | undefined) ?? [];
+    const missingSubnets: AzureNode[] = subnets.flatMap((subnet, index) => {
+      const id = subnetNodeId(node.id, index);
+      if (existingIds.has(id)) return [];
+      return [{
+        id,
+        type: 'azureGroup',
+        parentId: node.id,
+        extent: 'parent',
+        position: { x: 0, y: 0 },
+        data: {
+          typeKey: 'subnet',
+          imagePath: 'assets/azure-icons/networking/02742-icon-service-Subnet.svg',
+          name: subnet.name || `Subnet ${index + 1}`,
+          location: '',
+          useResourceGroupLocation: true,
+          isValid: true,
+          properties: { addressPrefix: subnet.addressPrefix ?? '' },
+        },
+      } satisfies AzureNode];
+    });
+    return [node, ...missingSubnets];
+  });
 
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
   const childrenOf = new Map<string | undefined, AzureNode[]>();
@@ -894,34 +922,6 @@ function autoLayoutDiagram(
     // Measure each child first
     const childSizes = children.map((c) => ({ id: c.id, size: measure(c.id) }));
 
-    // Pick a column count that keeps the group roughly square but capped at 5.
-    // Special-case Virtual Networks: they are managed by useSubnetSync which
-    // tiles their subnets horizontally and sizes them based on the VNet's
-    // own dimensions — leave their children alone here.
-    const myType = (node.data as AzureNodeData).typeKey;
-    const isVnet = myType === 'virtual-network' || myType === 'virtual-networks';
-    if (isVnet) {
-      // Don't reposition VNet children AND don't shrink the VNet itself.
-      // Use the largest of (current style, current measured, getGroupStyle
-      // fallback) so the parent group sizing accounts for the real on-screen
-      // VNet — otherwise the autoLayout pass would overwrite a previously
-      // grown VNet width with a small default and PE leaves inside the
-      // synthetic subnet would end up clipped outside.
-      const fallback = getGroupStyle(myType) ?? { width: 360, height: 220 };
-      const styleW = typeof node.style?.width === 'number' ? (node.style.width as number) : 0;
-      const styleH = typeof node.style?.height === 'number' ? (node.style.height as number) : 0;
-      const measuredW = node.measured?.width ?? 0;
-      const measuredH = node.measured?.height ?? 0;
-      const size: LayoutSize = {
-        width: Math.max(fallback.width, styleW, measuredW),
-        height: Math.max(fallback.height, styleH, measuredH),
-      };
-      // Intentionally DO NOT call newSize.set(...) — that would cause the
-      // mapping pass at the bottom of this function to write `size` back
-      // to the VNet's style, possibly shrinking it. Returning the size is
-      // enough for the parent group's measurement.
-      return size;
-    }
     const cols = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(children.length))));
     const rows = Math.ceil(children.length / cols);
     const colWidths = new Array<number>(cols).fill(0);
@@ -1175,7 +1175,8 @@ function autoLayoutDiagram(
       };
       return { ...rest, position, style } as AzureNode;
     }
-    return { ...n, position, style };
+    const size = newSize.get(n.id);
+    return { ...n, position, style, ...(size ? { width: size.width, height: size.height } : {}) };
   });
 }
 
