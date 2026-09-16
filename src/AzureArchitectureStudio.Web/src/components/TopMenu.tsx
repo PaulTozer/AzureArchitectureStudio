@@ -17,7 +17,6 @@ import {
   DialogActions,
   Button,
   Input,
-  Spinner,
   Toast,
   Toaster,
   useToastController,
@@ -44,12 +43,8 @@ import {
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useAppContext } from '../context/AppContext';
-import { azureManagementRequest, isAuthConfigured, bicepService } from '../services';
-import {
-  createArmTemplate,
-  getArmResourcesForNode,
-  type AzureNodeData,
-} from '../models';
+import { azureManagementRequest, isAuthConfigured } from '../services';
+import { createDiagramArmTemplate } from '../models/arm-template';
 import { toPng } from 'html-to-image';
 import CodeDrawer from './drawers/CodeDrawer';
 import SaveDrawer from './drawers/SaveDrawer';
@@ -58,6 +53,8 @@ import SettingsDialog from './dialogs/SettingsDialog';
 import ImportDialog from './dialogs/ImportDialog';
 import SubscriptionPicker from './SubscriptionPicker';
 import { autoLayout } from '../utils/auto-layout';
+import { createTerraformTemplate } from '../models/terraform-template';
+import { createBicepTemplate } from '../models/bicep-template';
 import './TopMenu.css';
 
 export default function TopMenu() {
@@ -69,14 +66,13 @@ export default function TopMenu() {
 
   const [codeDrawerOpen, setCodeDrawerOpen] = useState(false);
   const [codeDrawerContent, setCodeDrawerContent] = useState<{
-    type: 'arm' | 'bicep';
+    type: 'arm' | 'bicep' | 'terraform';
     content: string;
   } | null>(null);
   const [saveDrawerOpen, setSaveDrawerOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [imgPreview, setImgPreview] = useState<string | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
 
@@ -138,36 +134,12 @@ export default function TopMenu() {
       return null;
     }
 
-    const template = createArmTemplate();
-
-    // Pre-pass: if any resource group node has an explicit location, use
-    // it as the default value of the deployment-wide `location` parameter
-    // so child resources without their own override inherit a sensible
-    // region. Falls back to [resourceGroup().location] if none is set.
-    const rgLocation = nodes
-      .map((n) => {
-        const d = n.data as AzureNodeData;
-        if (d.typeKey !== 'resource-group') return undefined;
-        const loc = d.properties?.location;
-        return typeof loc === 'string' && loc.trim() !== '' ? loc.trim() : undefined;
-      })
-      .find((x): x is string => Boolean(x));
-    if (rgLocation && template.parameters.location) {
-      template.parameters.location.defaultValue = rgLocation;
+    try {
+      return JSON.stringify(createDiagramArmTemplate(nodes), null, 2);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to generate the export.', 'error');
+      return null;
     }
-
-    for (const node of nodes) {
-      const data = node.data as AzureNodeData;
-      const { resources, parameters } = getArmResourcesForNode(
-        data.typeKey,
-        data.name,
-        data.properties
-      );
-      template.resources.push(...resources);
-      Object.assign(template.parameters, parameters);
-    }
-
-    return JSON.stringify(template, null, 2);
   }, [nodes, showToast]);
 
   const handleExportArm = useCallback(() => {
@@ -177,25 +149,23 @@ export default function TopMenu() {
     setCodeDrawerOpen(true);
   }, [generateArmJson]);
 
-  const handleExportBicep = useCallback(async () => {
-    const json = generateArmJson();
-    if (!json) return;
-
-    setLoading(true);
+  const handleExportBicep = useCallback(() => {
     try {
-      const result = await bicepService.decompile(json);
-      if (result.error) {
-        showToast(result.error, 'error');
-        return;
-      }
-      setCodeDrawerContent({ type: 'bicep', content: result.bicepFile ?? '' });
+      setCodeDrawerContent({ type: 'bicep', content: createBicepTemplate(nodes, edges) });
       setCodeDrawerOpen(true);
-    } catch (err) {
-      showToast('Failed to decompile to Bicep.', 'error');
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export AVM Bicep.', 'error');
     }
-  }, [generateArmJson, showToast]);
+  }, [nodes, edges, showToast]);
+
+  const handleExportTerraform = useCallback(() => {
+    try {
+      setCodeDrawerContent({ type: 'terraform', content: createTerraformTemplate(nodes, edges) });
+      setCodeDrawerOpen(true);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export native Terraform.', 'error');
+    }
+  }, [nodes, edges, showToast]);
 
   const handleExportImage = useCallback(async () => {
     const canvas = document.querySelector('.react-flow') as HTMLElement;
@@ -323,7 +293,10 @@ export default function TopMenu() {
                   ARM Template
                 </MenuItem>
                 <MenuItem icon={<CodeRegular />} onClick={handleExportBicep}>
-                  Bicep
+                  Bicep (AVM)
+                </MenuItem>
+                <MenuItem icon={<CodeRegular />} onClick={handleExportTerraform}>
+                  Terraform
                 </MenuItem>
                 <MenuItem
                   icon={<ImageRegular />}
@@ -393,11 +366,6 @@ export default function TopMenu() {
           )}
         </Toolbar>
 
-        {loading && (
-          <div className="top-menu-loading">
-            <Spinner size="tiny" label="Working hard on it..." />
-          </div>
-        )}
       </div>
 
       {/* Code drawer */}

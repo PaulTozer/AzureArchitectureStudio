@@ -4,7 +4,6 @@ import {
   DrawerHeaderTitle,
   OverlayDrawer,
   Button,
-  Textarea,
 } from '@fluentui/react-components';
 import {
   DismissRegular,
@@ -14,7 +13,7 @@ import {
 import './CodeDrawer.css';
 
 interface CodeDrawerProps {
-  type: 'arm' | 'bicep';
+  type: 'arm' | 'bicep' | 'terraform';
   content: string;
   open: boolean;
   onClose: () => void;
@@ -26,21 +25,27 @@ export default function CodeDrawer({
   open,
   onClose,
 }: CodeDrawerProps) {
-  const title = type === 'arm' ? 'ARM Template' : 'Bicep';
+  const formats = {
+    arm: { title: 'ARM Template', extension: 'json', mime: 'application/json' },
+    bicep: { title: 'Bicep (Azure Verified Modules)', extension: 'bicep', mime: 'text/plain' },
+    terraform: { title: 'Terraform (AzureRM)', extension: 'tf.json', mime: 'application/json' },
+  };
+  const format = formats[type];
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
   };
 
   const handleDownload = () => {
-    const ext = type === 'arm' ? 'json' : 'bicep';
-    const blob = new Blob([content], { type: 'text/plain' });
+    const blob = new Blob([content], { type: format.mime });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.download = `azure-architecture.${ext}`;
+    link.download = `azure-architecture.${format.extension}`;
     link.href = url;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
@@ -61,22 +66,27 @@ export default function CodeDrawer({
                 icon={<CopyRegular />}
                 onClick={handleCopy}
                 title="Copy to clipboard"
+                aria-label="Copy to clipboard"
               />
               <Button
-                appearance="subtle"
+                appearance="primary"
                 icon={<ArrowDownloadRegular />}
                 onClick={handleDownload}
                 title="Download"
-              />
+                disabled={!content.trim()}
+              >
+                Download
+              </Button>
               <Button
                 appearance="subtle"
                 icon={<DismissRegular />}
                 onClick={onClose}
+                aria-label="Close export"
               />
             </div>
           }
         >
-          {title}
+          {format.title}
         </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>

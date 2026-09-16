@@ -8,7 +8,7 @@ Azure Architecture Studio is a web application designed to simplify and streamli
 - **Cloud storage**: Save your design in the cloud for convenient access from any location.
 - **Infrastructure as Code (IaC) generation**: Automatically generate IaC for your design, with support for both ARM templates and Bicep.
 
-The primary goal of Azure Architecture Studio is to help users create high-quality solution architectures for Azure while reducing the learning curve associated with ARM and Bicep. By improving the overall user experience, Azure Architecture Studio enables more efficient design and deployment of solutions on Azure.
+The primary goal of Azure Architecture Studio is to help users create high-quality solution architectures for Azure while reducing the learning curve associated with ARM, Bicep and Terraform. By improving the overall user experience, Azure Architecture Studio enables more efficient design and deployment of solutions on Azure.
 
 ## Origin
 
@@ -81,6 +81,38 @@ Or open `src/AzureArchitectureStudio.sln` in Visual Studio 2022, set `AzureArchi
 ### Configuring Azure Import (optional)
 
 The Azure Import feature requires an Entra ID app registration with delegated `https://management.azure.com/user_impersonation` permission and a SPA redirect URI matching your dev origin. Configure the client and tenant IDs in `src/AzureArchitectureStudio.Web/src/services/auth-config.ts` before signing in.
+
+### Exporting Infrastructure
+
+Choose **Export** in the toolbar, select a format, then choose **Download** in the preview:
+
+- **ARM Template** downloads `azure-architecture.json`.
+- **Bicep (AVM)** downloads `azure-architecture.bicep` using version-pinned [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/). Generation runs locally in the browser, without ARM decompilation or a backend call. Module restore requires access to the public Bicep registry. AVM telemetry is disabled in the export.
+- **Terraform** downloads `azure-architecture.tf.json`, Terraform's native JSON configuration syntax, containing individual AzureRM resources (provider `~> 4.81.0`). There are no ARM deployment wrappers or AzAPI fallbacks. Resources have their own Terraform lifecycle and references.
+
+Native Terraform and AVM cover all **37 deployable curated catalog entries**, with version-pinned modules and native AzureRM resources:
+
+| Family | Catalog coverage |
+| --- | --- |
+| Compute | Linux/Windows VMs, managed disks, AKS |
+| Networking | VNets/subnets, NSGs, public IPs, NICs, NAT gateways, private endpoints, firewall, Bastion, application gateway, load balancer, VPN gateway, public/private DNS |
+| Application hosting | App Service plans, Linux/Windows Web Apps and Function Apps, Flex Consumption functions, Static Web Apps, Container Apps/environments, Front Door, API Management |
+| Data and messaging | Storage, SQL servers/databases, MySQL/PostgreSQL flexible servers, Cosmos DB, Redis, Service Bus, Event Hubs, SignalR |
+| Operations | Key Vault, container registry, Log Analytics, Application Insights |
+
+Exports target one existing resource group. Resource group, tenant, subscription, and management group containers describe existing deployment context, not resources to provision. Terraform defaults the subscription ID and resource group name from those nodes when available. Bicep must be deployed to the corresponding existing subscription/resource group. Multi-subscription and multi-resource-group exports are rejected. The broader icon gallery also contains uncurated, legacy, and nondeployable entries; this coverage does not claim every icon is an exportable resource. Unsupported types or populated unmapped properties stop the export with an error. ARM retains its separate catalog-based generator.
+
+Native exports preserve supported diagram settings and use catalog defaults for unset properties. Synthetic subnet views become native Terraform subnet resources or AVM VNet subnet parameters. Containment/connections resolve SQL database/server, app/hosting plan, app/environment, environment/workspace/subnet, VM/subnet, NIC/NSG, gateway/public IP, NAT/public IP, and private-DNS/VNet dependencies. Other visual edges do not imply access policies, routing, or role assignments. Ambiguous dependencies fail. Missing dependency IDs, VM image offer/SKU, application backend hostnames, and workload configuration become required inputs. SQL databases must have their SQL server present and connected for AVM export because they are children of that module. Terraform addresses remain stable when nodes are rearranged or reordered.
+
+Passwords, repository tokens, and storage credentials always become sensitive Terraform variables or secure Bicep parameters without defaults, even when the diagram contains a value. Supply secrets separately; Terraform state can still contain them. Non-Basic SQL tiers require a specific SKU input within the selected tier. WAF-enabled application gateways and Front Door require an existing WAF policy ID; the application gateway policy must use the selected WAF mode. Function hosting-plan IDs must match the selected plan type, including FC1 for Flex Consumption. Workload code and deployment workflows are not exported.
+
+Some selectable settings cannot be represented by a target provider/module. These fail explicitly: AzureRM Service Bus zone redundancy, disabling service-managed Event Hubs Kafka, private-only Bastion, SQL federated client ID, VNet VM protection, native Go Web App runtime, and custom Static Web App workflow paths; AVM Bastion tunneling combinations conflicting with its SKU/session-recording behavior; and platform-invalid runtime/OS combinations. NSGs support Azure default inbound rules, not a custom default Allow action. The gateway AVM module is pinned to 0.10.0 to retain catalog legacy VPN SKU support; this does not guarantee those SKUs can still be provisioned. AVM settings without AzureRM equivalents remain available in Bicep where supported.
+
+For Terraform, supply `subscription_id`, `resource_group_name`, `location` (unless defaulted from the diagram), and additional required variables shown in the file. Authenticate separately using AzureRM's supported methods, then run `terraform init`, `terraform validate`, and review `terraform plan` before applying. For Bicep, use a current Bicep compiler, restore/build the file, supply its required parameters, and review a resource-group deployment what-if. AVM can apply security defaults beyond the diagram's settings; review the pinned module documentation before deployment.
+
+Export does not deploy or confirm regional availability, naming constraints, permissions, SKU compatibility, or production readiness. Protect exported files and Terraform state. Existing deployments made using the previous ARM-wrapper Terraform exporter require an explicit state/import migration; do not apply the new export over that state without reviewing the plan.
+
+Run the export regression tests from `src/AzureArchitectureStudio.Web` with `npm run test:exports`. Setting `EXPORT_VALIDATION_DIR` writes full-catalog Terraform and Bicep fixtures, including runtime/security variants, for provider validation and module compilation. These checks do not deploy resources.
 
 ## Frameworks and Libraries
 

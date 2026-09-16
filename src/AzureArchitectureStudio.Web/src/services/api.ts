@@ -145,6 +145,7 @@ export const bicepService = {
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ armTemplate: armJson }),
     });
+    if (!res.ok) throw new Error(`Bicep export failed: HTTP ${res.status}`);
     return res.json();
   },
 };

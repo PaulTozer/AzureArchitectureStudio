@@ -3805,5 +3805,56 @@
         }
       ]
     }
+  },
+  {
+    "key": "network-interfaces",
+    "displayName": "Network Interface",
+    "armType": "Microsoft.Network/networkInterfaces",
+    "apiVersion": "2024-05-01",
+    "propertySchema": [
+      { "key": "enableAcceleratedNetworking", "label": "Accelerated Networking", "type": "boolean", "defaultValue": false },
+      { "key": "enableIPForwarding", "label": "IP Forwarding", "type": "boolean", "defaultValue": false },
+      { "key": "dnsServers", "label": "DNS Servers", "type": "string", "defaultValue": "" },
+      { "key": "subnetResourceId", "label": "Existing Subnet Resource ID", "type": "string" }
+    ],
+    "dependencies": [
+      { "key": "subnet", "label": "Subnet", "targetType": "subnet", "required": true, "autoFromParent": true },
+      { "key": "networkSecurityGroup", "label": "Network Security Group", "targetType": "nsg" }
+    ],
+    "armMapping": { "propertyMappings": {
+      "enableAcceleratedNetworking": "properties.enableAcceleratedNetworking",
+      "enableIPForwarding": "properties.enableIPForwarding",
+      "dnsServers": "properties.dnsSettings.dnsServers"
+    } }
+  },
+  {
+    "key": "nat-gateways",
+    "displayName": "NAT Gateway",
+    "armType": "Microsoft.Network/natGateways",
+    "apiVersion": "2024-05-01",
+    "propertySchema": [
+      { "key": "idleTimeoutInMinutes", "label": "Idle Timeout (minutes)", "type": "number", "defaultValue": 4 },
+      { "key": "availabilityZone", "label": "Availability Zone", "type": "availability-zone-picker", "defaultValue": "" }
+    ],
+    "dependencies": [
+      { "key": "publicIp", "label": "Public IP Address", "targetType": "public-ip", "required": true }
+    ],
+    "armDefaults": { "sku": { "name": "Standard" } },
+    "armMapping": { "propertyMappings": { "idleTimeoutInMinutes": "properties.idleTimeoutInMinutes" } }
+  },
+  {
+    "key": "private-endpoints",
+    "displayName": "Private Endpoint",
+    "armType": "Microsoft.Network/privateEndpoints",
+    "apiVersion": "2024-05-01",
+    "propertySchema": [
+      { "key": "subnetResourceId", "label": "Existing Subnet Resource ID", "type": "string" },
+      { "key": "privateLinkResourceId", "label": "Target Resource ID", "type": "string" },
+      { "key": "groupId", "label": "Target Subresource (e.g. blob)", "type": "string" }
+    ],
+    "dependencies": [
+      { "key": "subnet", "label": "Subnet", "targetType": "subnet", "required": true, "autoFromParent": true }
+    ],
+    "armMapping": { "propertyMappings": { "subnetResourceId": "properties.subnet.id" } }
   }
 ]

@@ -147,6 +147,17 @@ const KEY_ALIASES: Record<string, string> = {
   'azure-database-for-mysql-flexible-servers': 'mysql',
   'azure-database-for-postgresql-flexible-servers': 'postgresql',
   disks: 'managed-disk',
+  'managed-disks': 'managed-disk',
+  'network-security-groups': 'nsg',
+  'load-balancers': 'load-balancer',
+  'azure-firewalls': 'azure-firewall',
+  'azure-cosmos-db': 'cosmos-db',
+  'application-insights': 'app-insights',
+  'dns-zones': 'dns-zone',
+  'azure-front-door-profiles': 'front-door',
+  'azure-service-bus': 'service-bus',
+  'network-interface': 'network-interfaces',
+  'private-endpoint': 'private-endpoints',
 };
 
 /** Resolves any incoming key to its canonical registry key. */

@@ -1,6 +1,29 @@
 // ARM template generation — data-driven via resource-registry.ts
 
 import { getResourceType } from './resource-registry';
+import type { AzureNode } from './diagram';
+
+export function createDiagramArmTemplate(nodes: AzureNode[]): DeploymentTemplate {
+  const template = createArmTemplate();
+  const groups = nodes.filter((node) => getResourceType(node.data.typeKey)?.armType === 'Microsoft.Resources/resourceGroups');
+  if (groups.length > 1) throw new Error('Export supports one resource group at a time. Export a single-resource-group diagram.');
+  const location = groups[0]?.data.properties?.location || groups[0]?.data.location;
+  if (typeof location === 'string' && location.trim()) template.parameters.location.defaultValue = location.trim();
+
+  for (const node of nodes) {
+    if (groups.includes(node)) continue;
+    if (node.id.includes('__subnet__') && nodes.some((parent) => parent.id === node.parentId && getResourceType(parent.data.typeKey)?.armType === 'Microsoft.Network/virtualNetworks')) continue;
+    const definition = getResourceType(node.data.typeKey);
+    if (!definition?.armType || !definition.apiVersion || definition.apiVersion === 'unknown') {
+      throw new Error(`Cannot export "${node.data.name}": no supported ARM definition for ${node.data.typeKey}.`);
+    }
+    const result = getArmResourcesForNode(node.data.typeKey, node.data.name, node.data.properties ?? {});
+    template.resources.push(...result.resources);
+    Object.assign(template.parameters, result.parameters);
+  }
+  if (!template.resources.length) throw new Error('There are no deployable resources to export.');
+  return template;
+}
 
 export interface Parameter {
   type: string;
@@ -141,6 +164,20 @@ export function getArmResourcesForNode(
   }
 
   const parameters: Record<string, Parameter> = {};
+
+  if (def.armType === 'Microsoft.Network/virtualNetworks' && Array.isArray(properties.subnets)) {
+    armResource.properties!.subnets = properties.subnets.map((subnet: Record<string, unknown>) => {
+      const { name: subnetName, properties: nested, ...values } = subnet;
+      const subnetProperties = { ...(nested as Record<string, unknown> | undefined), ...values };
+      if (typeof subnetProperties.delegations === 'string') {
+        const serviceName = subnetProperties.delegations;
+        subnetProperties.delegations = serviceName
+          ? [{ name: 'delegation', properties: { serviceName } }]
+          : [];
+      }
+      return { name: subnetName, properties: subnetProperties };
+    });
+  }
 
   // Emit declared parameters
   if (mapping?.parameters) {
