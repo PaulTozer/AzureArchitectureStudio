@@ -110,7 +110,7 @@ test('Native exports connect subnet, environment, workspace and container app re
   const terraform = JSON.parse(createTerraformTemplate(nodes, edges));
   assert.equal(terraform.resource.azurerm_container_app.resource_web.container_app_environment_id, '${azurerm_container_app_environment.resource_environment.id}');
   assert.equal(terraform.resource.azurerm_container_app_environment.resource_environment.log_analytics_workspace_id, '${azurerm_log_analytics_workspace.resource_logs.id}');
-  assert.equal(terraform.resource.azurerm_container_app_environment.resource_environment.infrastructure_subnet_id, '${azurerm_subnet.resource_network_2f_subnet_2f_apps.id}');
+  assert.equal(terraform.resource.azurerm_container_app_environment.resource_environment.infrastructure_subnet_id, '${azurerm_subnet.resource_network_subnet_apps.id}');
   assert.equal(terraform.resource.azurerm_container_app.resource_web.template[0].container[0].cpu, 0.5);
   const bicep = createBicepTemplate(nodes, edges);
   assert.match(bicep, /environmentResourceId: resource_environment.outputs.resourceId/);
@@ -205,9 +205,9 @@ test('Full catalog fixtures preserve native types, secure inputs, and SQL parent
   const terraform = createTerraformTemplate(nodes);
   const bicep = createBicepTemplate(nodes);
   const configuration = JSON.parse(terraform);
-  assert.equal(configuration.variable.resource_sql_2d_server_admin_password.sensitive, true);
-  assert.equal(configuration.variable.resource_sql_2d_server_admin_password.default, undefined);
-  assert.match(bicep, /@secure\(\)\nparam resource_sql_2d_server_admin_password string/);
+  assert.equal(configuration.variable.resource_sqlserver_admin_password.sensitive, true);
+  assert.equal(configuration.variable.resource_sqlserver_admin_password.default, undefined);
+  assert.match(bicep, /@secure\(\)\nparam resource_sqlserver_admin_password string/);
   assert.match(bicep, /databases: \[/);
   assert.doesNotMatch(terraform, /azapi_resource|template_deployment/);
   assert.doesNotMatch(terraform + bicep, /must-not-export/);
@@ -254,4 +254,47 @@ test('Catalog aliases retain defaults and exporters only request inputs used by 
   const bicep = createBicepTemplate([node('firewall', 'azure-firewall')]);
   assert.match(bicep, /param resource_firewall_virtual_network_id string/);
   assert.doesNotMatch(bicep, /param resource_firewall_subnet_id/);
+});
+
+test('Bicep and Terraform use resource names with stable collision handling and connected references', () => {
+  const nodes = [node('azure-1789561257002', 'container-apps-environments'), node('azure-1789561312929', 'container-apps', {}, 'azure-1789561257002')];
+  nodes[0].data.name = 'Prod-Apps.Eastus';
+  nodes[1].data.name = 'prod-web-eastus';
+  const terraform = JSON.parse(createTerraformTemplate(nodes));
+  assert.equal(terraform.resource.azurerm_container_app.resource_prod_web_eastus.container_app_environment_id, '${azurerm_container_app_environment.resource_prod_apps_eastus.id}');
+  assert.equal(terraform.resource.azurerm_container_app.resource_prod_web_eastus.name, 'prod-web-eastus');
+  const bicep = createBicepTemplate(nodes);
+  assert.match(bicep, /module resource_prod_apps_eastus /);
+  assert.match(bicep, /environmentResourceId: resource_prod_apps_eastus.outputs.resourceId/);
+  assert.doesNotMatch(bicep + JSON.stringify(terraform), /178956/);
+
+  const duplicates = ['prod-app', 'prod.app', 'prod_app_2', '', '123 app', 'prod-app'].map((name, index) => {
+    const resource = node(`id-${index}`, 'storage-account'); resource.data.name = name; return resource;
+  });
+  const config = JSON.parse(createTerraformTemplate(duplicates));
+  const names = Object.keys(config.resource.azurerm_storage_account);
+  assert.equal(new Set(names).size, duplicates.length);
+  assert.ok(names.includes('resource_prod_app_2'));
+  assert.ok(names.includes('resource_unnamed'));
+  assert.ok(names.every((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)));
+  assert.deepEqual(config.resource, JSON.parse(createTerraformTemplate([...duplicates].reverse())).resource);
+  const moduleNames = [...createBicepTemplate(duplicates).matchAll(/^module (\w+) /gm)].map((match) => match[1]);
+  assert.deepEqual(moduleNames, names);
+});
+
+test('Subnet names are readable and normalized collisions retain their own references', () => {
+  const network = node('opaque-network-id', 'virtual-networks', { subnets: [
+    { name: 'app-net', addressPrefix: '10.0.0.0/24' }, { name: 'app.net', addressPrefix: '10.0.1.0/24' },
+  ] });
+  network.data.name = 'prod-vnet';
+  const subnet = node('opaque-network-id__subnet__1', 'subnet', {}, network.id);
+  subnet.data.name = 'app.net';
+  const environment = node('opaque-environment-id', 'container-apps-environments', {}, subnet.id);
+  environment.data.name = 'prod-env';
+  const nodes = [network, subnet, environment];
+  const config = JSON.parse(createTerraformTemplate(nodes));
+  assert.equal(config.resource.azurerm_subnet.resource_prod_vnet_subnet_app_net.name, 'app-net');
+  assert.equal(config.resource.azurerm_subnet.resource_prod_vnet_subnet_app_net_2.name, 'app.net');
+  assert.equal(config.resource.azurerm_container_app_environment.resource_prod_env.infrastructure_subnet_id, '${azurerm_subnet.resource_prod_vnet_subnet_app_net_2.id}');
+  assert.match(createBicepTemplate(nodes), /infrastructureSubnetResourceId: resource_prod_vnet.outputs.subnetResourceIds\[1\]/);
 });

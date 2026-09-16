@@ -20,6 +20,7 @@ export function getExportResources(nodes: AzureNode[]): ExportResource[] {
     nodes.some((parent) => parent.id === node.parentId && getResourceType(parent.data.typeKey)?.armType === 'Microsoft.Network/virtualNetworks')));
   if (!resources.length) throw new Error('There are no deployable resources to export.');
   if (new Set(nodes.map((node) => node.id)).size !== nodes.length) throw new Error('Cannot export duplicate node IDs.');
+  const symbols = allocateExportSymbols(resources.map((node) => ({ key: node.id, name: node.data.name })));
   return resources.map((node) => {
     const definition = getResourceType(node.data.typeKey);
     const armType = definition?.armType || getArmType(node.data.typeKey);
@@ -34,12 +35,28 @@ export function getExportResources(nodes: AzureNode[]): ExportResource[] {
         throw new Error(`Invalid ${field.key} on "${node.data.name}".`);
       }
     }
-    return { node, symbol: exportSymbol(node.id), armType, properties };
+    return { node, symbol: symbols.get(node.id)!, armType, properties };
   });
 }
 
-export function exportSymbol(id: string): string {
-  return `resource_${id.replace(/[^A-Za-z0-9]/g, (character) => `_${character.charCodeAt(0).toString(16)}_`)}`;
+export function exportSymbol(name: string): string {
+  const normalized = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+  return `resource_${normalized.slice(0, 100) || 'unnamed'}`;
+}
+
+function allocateExportSymbols(entries: { key: string; name: string }[], reserved: string[] = []): Map<string, string> {
+  const symbols = new Map<string, string>();
+  const used = new Set(reserved);
+  const bases = new Set(entries.map((entry) => exportSymbol(entry.name)));
+  for (const entry of [...entries].sort((first, second) => first.key < second.key ? -1 : first.key > second.key ? 1 : 0)) {
+    const base = exportSymbol(entry.name);
+    let symbol = base;
+    let suffix = 2;
+    while (used.has(symbol) || (symbol !== base && bases.has(symbol))) symbol = `${base}_${suffix++}`;
+    used.add(symbol);
+    symbols.set(entry.key, symbol);
+  }
+  return symbols;
 }
 
 export function findExportDependency(resource: ExportResource, armType: string, resources: ExportResource[], edges: AzureEdge[]): ExportResource | undefined {
@@ -106,6 +123,9 @@ const definitions: Record<string, { terraform: string; avm: string }> = {
 
 export function createNativeExportPlan(nodes: AzureNode[], edges: AzureEdge[] = [], target: 'terraform' | 'bicep' = 'terraform'): NativeExportPlan {
   const resources = getExportResources(nodes);
+  const subnetKey = (resource: ExportResource, name: unknown) => JSON.stringify([resource.node.id, name]);
+  const subnetSymbols = allocateExportSymbols(resources.filter((resource) => resource.armType === 'Microsoft.Network/virtualNetworks').flatMap((resource) =>
+    objectArray(resource.properties.subnets, 'subnets').map((subnet) => ({ key: subnetKey(resource, subnet.name), name: `${resource.symbol.slice('resource_'.length)}_subnet_${subnet.name}` }))), resources.map((resource) => resource.symbol));
   const group = nodes.find((node) => getResourceType(node.data.typeKey)?.armType === 'Microsoft.Resources/resourceGroups');
   const region = group?.data.properties.location || group?.data.location;
   const plan: NativeExportPlan = { resources: [], inputs: {
@@ -146,7 +166,7 @@ export function createNativeExportPlan(nodes: AzureNode[], edges: AzureEdge[] = 
     const subnets = objectArray(vnet.properties.subnets, 'subnets');
     const index = subnets.findIndex((subnet) => subnet.name === subnetNode.data.name);
     if (index < 0) throw new Error(`Subnet "${subnetNode.data.name}" is missing from its virtual network properties.`);
-    return new ExportExpression(`azurerm_subnet.${exportSymbol(`${vnet.node.id}/subnet/${subnets[index].name}`)}.id`, `${vnet.symbol}.outputs.subnetResourceIds[${index}]`);
+    return new ExportExpression(`azurerm_subnet.${subnetSymbols.get(subnetKey(vnet, subnets[index].name))}.id`, `${vnet.symbol}.outputs.subnetResourceIds[${index}]`);
   };
 
   for (const resource of resources) {
@@ -201,7 +221,7 @@ export function createNativeExportPlan(nodes: AzureNode[], edges: AzureEdge[] = 
           if (unknown.length) throw new Error(`Unsupported subnet properties: ${unknown.join(', ')}.`);
           if (!subnet.name || !subnet.addressPrefix) throw new Error('Subnets require a name and addressPrefix.');
           if (subnet.delegations && typeof subnet.delegations !== 'string') throw new Error('Subnet delegation must be a service name.');
-          const subnetSymbol = exportSymbol(`${resource.node.id}/subnet/${subnet.name}`);
+          const subnetSymbol = subnetSymbols.get(subnetKey(resource, subnet.name))!;
           const subnetNode = nodes.find((node) => node.parentId === resource.node.id && node.data.name === subnet.name && node.id.includes('__subnet__'));
           const nsg = subnetNode && findExportDependency({ ...resource, node: subnetNode }, 'Microsoft.Network/networkSecurityGroups', resources, edges);
           plan.resources.push({ symbol: subnetSymbol, terraformType: 'azurerm_subnet', bicep: {}, terraform: {
