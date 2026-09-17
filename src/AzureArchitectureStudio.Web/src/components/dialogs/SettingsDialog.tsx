@@ -78,6 +78,24 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         <DialogBody>
           <DialogTitle>Settings</DialogTitle>
           <DialogContent>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600 }}>Appearance</h3>
+            <Field label="Theme" style={{ marginBottom: 16 }}>
+              <Dropdown
+                value={{ light: 'Light', dark: 'Dark', system: 'System' }[diagramSettings.colorMode]}
+                selectedOptions={[diagramSettings.colorMode]}
+                onOptionSelect={(_, data) => {
+                  const colorMode = data.optionValue;
+                  if (colorMode === 'light' || colorMode === 'dark' || colorMode === 'system') {
+                    setDiagramSettings((previous) => ({ ...previous, colorMode }));
+                  }
+                }}
+              >
+                <Option value="light">Light</Option>
+                <Option value="dark">Dark</Option>
+                <Option value="system">System</Option>
+              </Dropdown>
+            </Field>
+            <Divider style={{ margin: '8px 0 16px 0' }} />
             <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600 }}>Diagram</h3>
             <Field
               label="Connection line style"

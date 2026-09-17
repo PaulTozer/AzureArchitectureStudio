@@ -25,7 +25,18 @@ export function getExportResources(nodes: AzureNode[]): ExportResource[] {
     const definition = getResourceType(node.data.typeKey);
     const armType = definition?.armType || getArmType(node.data.typeKey);
     if (!armType) throw new Error(`Cannot export "${node.data.name}": unsupported resource type ${node.data.typeKey}.`);
-    const properties = { ...getDefaultProperties(node.data.typeKey), ...node.data.properties };
+    const { __armSpecAdvanced__: advanced, ...configured } = node.data.properties;
+    if (advanced !== undefined && advanced !== null &&
+      (typeof advanced !== 'object' || Array.isArray(advanced))) {
+      throw new Error(`Invalid advanced properties on "${node.data.name}".`);
+    }
+    const advancedProperties = (advanced ?? {}) as Record<string, unknown>;
+    for (const key of Object.keys(advancedProperties)) {
+      if (Object.prototype.hasOwnProperty.call(configured, key)) {
+        throw new Error(`Cannot export "${node.data.name}": ${key} is configured in both standard and advanced properties.`);
+      }
+    }
+    const properties = { ...getDefaultProperties(node.data.typeKey), ...configured, ...advancedProperties };
     for (const field of definition?.propertySchema ?? []) {
       const value = properties[field.key];
       if (value === undefined || value === '') continue;

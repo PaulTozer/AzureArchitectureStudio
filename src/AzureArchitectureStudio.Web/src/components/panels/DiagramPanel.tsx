@@ -39,6 +39,7 @@ import {
   ArrowDownRegular,
 } from '@fluentui/react-icons';
 import { useAppContext } from '../../context/AppContext';
+import { useColorMode } from '../../services/diagram-settings';
 import {
   type AzureNodeData,
   type AzureNode,
@@ -74,6 +75,7 @@ const edgeTypes: EdgeTypes = {
 let nodeIdCounter = 0;
 
 export default function DiagramPanel() {
+  const colorMode = useColorMode();
   const {
     nodes,
     edges,
@@ -633,6 +635,7 @@ export default function DiagramPanel() {
   return (
     <div className="diagram-panel" ref={reactFlowWrapper}>
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={displayEdges}
         onNodesChange={onNodesChange}
@@ -662,9 +665,8 @@ export default function DiagramPanel() {
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls />
         <MiniMap
-          nodeStrokeColor="#0078d4"
-          nodeColor="#e1dfdd"
-          maskColor="rgba(0,0,0,0.1)"
+          nodeStrokeColor="var(--colorBrandForeground1)"
+          nodeColor="var(--colorNeutralBackground5)"
         />
       </ReactFlow>
 

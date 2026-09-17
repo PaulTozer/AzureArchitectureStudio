@@ -90,19 +90,19 @@
 .azure-group-title {
   font-size: 11px;
   font-weight: 600;
-  color: #323130;
+  color: var(--colorNeutralForeground1);
 }
 
 .azure-group--vnet > .azure-group-header .azure-group-title {
-  color: #0078d4;
+  color: var(--colorBrandForeground1);
 }
 
 .azure-group--subnet > .azure-group-header .azure-group-title {
-  color: #605e5c;
+  color: var(--colorNeutralForeground2);
 }
 
 .azure-group-warning {
-  color: #d83b01;
+  color: var(--colorStatusWarningForeground1);
   font-size: 14px;
   margin-left: auto;
 }
@@ -111,7 +111,7 @@
   width: 8px;
   height: 8px;
   background: #0078d4;
-  border: 2px solid #fff;
+  border: 2px solid var(--colorNeutralBackground1);
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 10;
@@ -125,4 +125,22 @@
 
 .azure-group--subnet .react-flow__handle {
   background: #888;
+}
+
+[data-color-mode='dark'] .azure-group--resource-group {
+  background: color-mix(in srgb, var(--colorNeutralBackground3) 50%, transparent);
+  border-color: var(--colorNeutralStroke1);
+}
+
+[data-color-mode='dark'] .azure-group--subnet {
+  background: color-mix(in srgb, var(--colorNeutralBackground4) 30%, transparent);
+  border-color: var(--colorNeutralStroke1);
+}
+
+[data-color-mode='dark'] .azure-group > .azure-group-header {
+  border-bottom-color: var(--colorNeutralStroke2);
+}
+
+[data-color-mode='dark'] .azure-group.selected {
+  border-color: var(--colorBrandForeground1);
 }

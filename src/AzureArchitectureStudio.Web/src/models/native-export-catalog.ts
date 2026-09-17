@@ -354,10 +354,26 @@ function extendComputeAndNetwork(context: MappingContext): void {
     case 'Microsoft.Network/virtualNetworkGateways': {
       field('gatewayType', 'type', 'gatewayType'); field('vpnType', 'vpn_type', 'vpnType');
       field('sku', 'sku', 'skuName'); field('generation', 'generation', 'vpnGatewayGeneration');
-      mapped.push('enableBgp'); terraform.bgp_enabled = properties.enableBgp;
-      bicep.clusterSettings = { clusterMode: properties.enableBgp ? 'activePassiveBgp' : 'activePassiveNoBgp' };
+      mapped.push('enableBgp', 'activeActive'); terraform.bgp_enabled = properties.enableBgp;
+      if (properties.activeActive !== undefined && typeof properties.activeActive !== 'boolean') {
+        throw new Error(`Invalid activeActive on "${resource.node.data.name}": expected a boolean.`);
+      }
+      const activeActive = properties.activeActive ?? false;
+      if (activeActive && (properties.gatewayType !== 'Vpn' || properties.vpnType !== 'RouteBased' || properties.sku === 'Basic')) {
+        throw new Error('Active-active gateways require a route-based VPN gateway with a non-Basic SKU.');
+      }
+      terraform.active_active = activeActive;
+      const secondaryIp = activeActive ? required('secondary_public_ip_id') : undefined;
+      bicep.clusterSettings = {
+        clusterMode: `${activeActive ? 'activeActive' : 'activePassive'}${properties.enableBgp ? 'Bgp' : 'NoBgp'}`,
+        ...(activeActive ? { existingSecondaryPublicIPResourceId: secondaryIp } : {}),
+      };
       const ip = publicIp();
-      terraform.ip_configuration = [{ name: 'primary', subnet_id: target === 'terraform' ? subnet() : undefined, public_ip_address_id: ip, private_ip_address_allocation: 'Dynamic' }];
+      const subnetId = target === 'terraform' ? subnet() : undefined;
+      terraform.ip_configuration = [
+        { name: 'primary', subnet_id: subnetId, public_ip_address_id: ip, private_ip_address_allocation: 'Dynamic' },
+        ...(activeActive ? [{ name: 'secondary', subnet_id: subnetId, public_ip_address_id: secondaryIp, private_ip_address_allocation: 'Dynamic' }] : []),
+      ];
       bicep.existingPrimaryPublicIPResourceId = ip; bicep.virtualNetworkResourceId = vnet();
       break;
     }

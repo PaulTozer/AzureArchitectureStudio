@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import {
   FluentProvider,
   webLightTheme,
+  webDarkTheme,
   Spinner,
 } from '@fluentui/react-components';
 import { MsalProvider } from '@azure/msal-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { msalInstance } from './services';
+import { useColorMode } from './services/diagram-settings';
 import { AppProvider, useAppContext } from './context/AppContext';
 import type { StencilModel, AzureServiceModel } from './models';
 import { loadResourceTypeRegistry, isGroupType, getGroupStyle } from './models';
@@ -98,9 +100,13 @@ function AppContent() {
 }
 
 export default function App() {
+  const colorMode = useColorMode();
+  useEffect(() => {
+    document.documentElement.style.colorScheme = colorMode;
+  }, [colorMode]);
   return (
     <MsalProvider instance={msalInstance}>
-      <FluentProvider theme={webLightTheme} style={{ height: '100%' }}>
+      <FluentProvider theme={colorMode === 'dark' ? webDarkTheme : webLightTheme} data-color-mode={colorMode} style={{ height: '100%', colorScheme: colorMode }}>
         <AppProvider>
           <ReactFlowProvider>
             <AppContent />

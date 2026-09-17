@@ -133,6 +133,56 @@ test('Native exports fail closed for unsupported resources and properties', () =
   }
 });
 
+test('Native exports unwrap advanced editor fields without losing configuration', () => {
+  for (const generate of [createTerraformTemplate, createBicepTemplate]) {
+    for (const advanced of [{}, { unused: '' }, null]) {
+      const baseline = [node('gateway', 'virtual-network-gateways')];
+      const edited = [node('gateway', 'virtual-network-gateways', { __armSpecAdvanced__: advanced })];
+      assert.equal(generate(edited), generate(baseline));
+      assert.deepEqual(edited[0].data.properties, { __armSpecAdvanced__: advanced });
+    }
+    assert.equal(
+      generate([node('storage', 'storage-account', { __armSpecAdvanced__: { enableHns: true } })]),
+      generate([node('storage', 'storage-account', { enableHns: true })]),
+    );
+    assert.throws(() => generate([node('storage', 'storage-account', { __armSpecAdvanced__: { customProperty: false } })]), /unsupported properties: customProperty/);
+    assert.throws(() => generate([node('storage', 'storage-account', { __armSpecAdvanced__: { enableHns: 'false' } })]), /Invalid enableHns/);
+    assert.throws(() => generate([node('storage', 'storage-account', { enableHns: false, __armSpecAdvanced__: { enableHns: true } })]), /both standard and advanced/);
+    assert.throws(() => generate([node('storage', 'storage-account', { __armSpecAdvanced__: [] })]), /Invalid advanced properties/);
+  }
+});
+
+test('Gateway exports preserve active-active and BGP modes from advanced settings', () => {
+  for (const activeActive of [false, true]) {
+    for (const enableBgp of [false, true]) {
+      const nodes = [node('gateway', 'virtual-network-gateways', { enableBgp, __armSpecAdvanced__: { activeActive } })];
+      const terraform = JSON.parse(createTerraformTemplate(nodes));
+      const gateway = terraform.resource.azurerm_virtual_network_gateway.resource_gateway;
+      assert.equal(gateway.active_active, activeActive);
+      assert.equal(gateway.bgp_enabled, enableBgp);
+      assert.equal(gateway.ip_configuration.length, activeActive ? 2 : 1);
+      const bicep = createBicepTemplate(nodes);
+      assert.ok(bicep.includes(`clusterMode: '${activeActive ? 'activeActive' : 'activePassive'}${enableBgp ? 'Bgp' : 'NoBgp'}'`));
+      if (activeActive) {
+        assert.equal(gateway.ip_configuration[1].subnet_id, gateway.ip_configuration[0].subnet_id);
+        assert.equal(gateway.ip_configuration[1].public_ip_address_id, '${var.resource_gateway_secondary_public_ip_id}');
+        assert.equal(terraform.variable.resource_gateway_secondary_public_ip_id.default, undefined);
+        assert.match(bicep, /existingSecondaryPublicIPResourceId: resource_gateway_secondary_public_ip_id/);
+      } else {
+        assert.equal(terraform.variable.resource_gateway_secondary_public_ip_id, undefined);
+        assert.doesNotMatch(bicep, /secondary_public_ip_id/);
+      }
+      assert.equal(createTerraformTemplate([node('gateway', 'virtual-network-gateways', { activeActive, enableBgp })]), createTerraformTemplate(nodes));
+    }
+  }
+  for (const generate of [createTerraformTemplate, createBicepTemplate]) {
+    assert.throws(() => generate([node('gateway', 'virtual-network-gateways', { activeActive: 'false' })]), /Invalid activeActive/);
+    for (const incompatible of [{ gatewayType: 'ExpressRoute' }, { vpnType: 'PolicyBased' }, { sku: 'Basic' }]) {
+      assert.throws(() => generate([node('gateway', 'virtual-network-gateways', { activeActive: true, ...incompatible })]), /Active-active gateways require/);
+    }
+  }
+});
+
 test('Native exports preserve addresses on reorder and emit missing inputs without fake values', () => {
   const nodes = [node('app', 'container-apps'), node('storage', 'storage-account')];
   const terraform = JSON.parse(createTerraformTemplate(nodes));
@@ -187,6 +237,7 @@ test('Full catalog fixtures preserve native types, secure inputs, and SQL parent
     node('windowsvm', 'virtual-machine', { osType: 'windows', authenticationType: 'password', adminPassword: 'must-not-export' }),
     node('flexfunction', 'function-app', { hostingPlan: 'flex-consumption', runtimeStack: 'dotnet-isolated|v8.0', managedIdentity: true }),
     node('wafgateway', 'app-gateway', { tier: 'WAF_v2', enableAutoScale: true, wafMode: 'Prevention' }),
+    node('activegateway', 'virtual-network-gateways', { enableBgp: true, __armSpecAdvanced__: { activeActive: true } }),
     node('wafcdn', 'front-door', { enableWaf: true, enableCaching: true }),
     node('aadsql', 'sql-server', { enableAadAuth: true, aadOnlyAuthentication: true, identityType: 'SystemAssigned' }),
     node('haPostgres', 'postgresql', { enableEntraAuth: true, sku: 'Standard_D2s_v3', highAvailability: 'ZoneRedundant' }),
